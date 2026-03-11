@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pêndulo de Foucault - Precessão</title>
+    <link rel="stylesheet" href="style.css">
+     <!-- Firebase App (Core) SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
+    <!-- Firebase Realtime Database SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <!-- Firebase App Check SDK -->
+    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app-check.js"></script>    
+    <!-- Chart.js para gráficos -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.0/chart.min.js"></script>
+    <!-- Moment.js para manipulação de datas -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-adapter-moment/1.0.0/chartjs-adapter-moment.min.js"></script>
+    <!-- Chart.js Zoom Plugin (Hammer.js é uma dependência opcional, mas recomendada para gestos de toque) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/hammer.js/2.0.8/hammer.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/chartjs-plugin-zoom/1.2.1/chartjs-plugin-zoom.min.js"></script>
+    <!-- Simple Statistics (para regressão linear) -->
+    <script src="https://unpkg.com/simple-statistics@7.8.8/dist/simple-statistics.min.js"></script>
+</head>
+<body>
+    <div class="container">
+        <h1>Pêndulo de Foucault - Evolução da Precessão</h1>
+
+        <div class="dashboard-grid">
+            <div class="chart-container panel">
+                <h2>Gráfico de Precessão (Ângulo vs. Tempo)</h2>
+                <div class="controls">                    
+                    <button id="btnLinearFit">Ajuste Linear nos Dados Visíveis</button>
+                    <button id="btnExportData">Exportar Dados Visíveis (CSV)</button>
+                    <button id="btnResetZoom">Resetar Zoom</button>
+                </div>
+                <canvas id="precessionChart"></canvas>
+            </div>
+
+            <div class="info-panels">
+                <div class="speed-panel panel">
+                    <h2>Velocidade Atual de Precessão</h2>
+                    <p id="currentPrecessionSpeed">- N/A -</p>
+                </div>
+
+                <div class="stats-panel panel">
+                    <h2>Estatísticas da Precessão (Ajuste)</h2>
+                    <p>Velocidade Média: <span id="meanPrecessionSpeed">- N/A -</span></p>
+                    <p>Desvio Padrão (resíduos): <span id="stdDevPrecessionSpeed">- N/A -</span></p>
+                    <p>Coef. Angular Teórico: 5.67 °/hora</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
