@@ -4,16 +4,8 @@
 // Configurações e Constantes Globais
 // -----------------------------------------------------------------------------
 
-// Configuração do Firebase (COLE O SEU firebaseConfig AQUI)
-const firebaseConfig = {
-    apiKey: "AIzaSyBUGLZhL_OrWk4Efw2RY-VsKZyCI0k9dCo",
-    authDomain: "pendulo-foucault-ufscar.firebaseapp.com",
-    databaseURL: "https://pendulo-foucault-ufscar-default-rtdb.firebaseio.com",
-    projectId: "pendulo-foucault-ufscar",
-    storageBucket: "pendulo-foucault-ufscar.firebasestorage.app",
-    messagingSenderId: "174626824438",
-    appId: "1:174626824438:web:9aad5039a183fafdae8cd7"
-};
+// Configuração do Firebase carregada de config.js
+// firebaseConfig e APP_CHECK_PUBLIC_KEY devem estar definidos globalmente.
 
 // Parâmetros de Visualização e Comportamento
 const THEORETICAL_PRECESSION_RATE_DEG_PER_HOUR = 5.67; // Taxa de precessão teórica em graus por hora. Ajuste para sua latitude!
@@ -41,13 +33,17 @@ let fitLinesActive = false; // Controla se as linhas de ajuste estão ativas/vis
 // -----------------------------------------------------------------------------
 // Inicialização do Firebase e App Check
 // -----------------------------------------------------------------------------
-firebase.initializeApp(firebaseConfig);
-const database = firebase.database();
-const appCheck = firebase.appCheck();
-appCheck.activate(
-    '6LebZ1QrAAAAAKPUCuSQV1rmWSqX2oBL9Em-ALVW',
-    true
-);
+if (typeof firebaseConfig !== 'undefined') {
+    firebase.initializeApp(firebaseConfig);
+    const database = firebase.database();
+    const appCheck = firebase.appCheck();
+    appCheck.activate(
+        APP_CHECK_PUBLIC_KEY,
+        true
+    );
+} else {
+    console.error("Firebase configuration not found. Please check config.js");
+}
 
 // -----------------------------------------------------------------------------
 // Funções Utilitárias
