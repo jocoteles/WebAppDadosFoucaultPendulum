@@ -33,10 +33,12 @@ let fitLinesActive = false; // Controla se as linhas de ajuste estão ativas/vis
 // -----------------------------------------------------------------------------
 // Inicialização do Firebase e App Check
 // -----------------------------------------------------------------------------
+let database, appCheck;
+
 if (typeof firebaseConfig !== 'undefined') {
     firebase.initializeApp(firebaseConfig);
-    const database = firebase.database();
-    const appCheck = firebase.appCheck();
+    database = firebase.database();
+    appCheck = firebase.appCheck();
     appCheck.activate(
         APP_CHECK_PUBLIC_KEY,
         true

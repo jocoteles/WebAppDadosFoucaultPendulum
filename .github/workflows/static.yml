@@ -5,7 +5,7 @@ name: Deploy Estático do Pêndulo
 
 on:
   push:
-    branches: ["main"] # Mude para a sua branch principal se necessário
+    branches: ["master"] # Mude para a sua branch principal se necessário
   workflow_dispatch:
 
 permissions:
@@ -26,6 +26,10 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Listar arquivos para debug
+        run: |
+          ls -R
 
       - name: Criar config.js a partir dos Secrets
         run: |
