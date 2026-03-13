@@ -35,26 +35,11 @@ let mod360ScaleActive = false; // Controla se a escala do eixo Y está em modo "
 // -----------------------------------------------------------------------------
 // Inicialização do Firebase e App Check
 // -----------------------------------------------------------------------------
-let database, appCheck;
+let database;
 
 if (typeof firebaseConfig !== 'undefined') {
     firebase.initializeApp(firebaseConfig);
     database = firebase.database();
-
-    // App Check: inicializa apenas se a chave estiver definida e o ambiente não for local.
-    // O App Check requer que o domínio esteja registrado no Firebase Console; em localhost
-    // ele retorna 403 e gera erros no console. Como as regras do Realtime Database já
-    // protegem as escritas via secret_token, o App Check é opcional para leitura pública.
-    if (typeof APP_CHECK_PUBLIC_KEY !== 'undefined' && APP_CHECK_PUBLIC_KEY &&
-        window.location.hostname !== 'localhost' &&
-        window.location.hostname !== '127.0.0.1') {
-        try {
-            appCheck = firebase.appCheck();
-            appCheck.activate(APP_CHECK_PUBLIC_KEY, true);
-        } catch (e) {
-            console.warn("App Check não pôde ser inicializado:", e.message);
-        }
-    }
 } else {
     console.error("Firebase configuration not found. Please check config.js");
 }
