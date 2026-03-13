@@ -9,6 +9,9 @@ Além de apenas observar, a aplicação permite que qualquer pessoa interessada 
 ## Funcionalidades da Aplicação
 
 *   **Gráfico Interativo:** Visualização em tempo real do ângulo de precessão versus tempo. O gráfico suporta *zoom* e *pan* (arrastar), otimizando a visualização para longos períodos de tempo.
+*   **Escala em Pilhas de 360° (Mod 360°):** Um botão de alternância permite mudar a visualização do eixo vertical entre dois modos, sem alterar a posição dos dados no gráfico:
+    *   **Desabilitado (padrão):** O eixo Y exibe o ângulo acumulado real (ex.: 361°, 722°, 1083°...), ideal para verificar a tendência linear da precessão ao longo do tempo.
+    *   **Habilitado:** O eixo Y exibe a escala de forma cíclica — os *labels* são apresentados em módulo 360° (de 0° a 360°, repetindo-se), de maneira análoga a um papel semilog, porém com espaçamento linear. Linhas divisórias tracejadas são adicionadas automaticamente a cada múltiplo de 360° para facilitar a leitura dos ciclos completos.
 *   **Ajuste Linear Estatístico:** É possível realizar uma regressão linear sobre os dados que estão visíveis na tela no momento, calculando a velocidade média de precessão experimental.
 *   **Comparação Teórica:** A aplicação sobrepõe aos dados reais uma reta representando a velocidade teórica esperada da precessão para a localidade de Araras-SP.
 *   **Painel de Informações:** Exibição da velocidade instantânea do pêndulo e estatísticas básicas de desvio do experimento.

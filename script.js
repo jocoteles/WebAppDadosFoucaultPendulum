@@ -20,6 +20,7 @@ const precessionChartCtx = document.getElementById('precessionChart').getContext
 const btnLinearFit = document.getElementById('btnLinearFit');
 const btnExportData = document.getElementById('btnExportData');
 const btnResetZoom = document.getElementById('btnResetZoom');
+const btnToggleMod360 = document.getElementById('btnToggleMod360');
 const currentPrecessionSpeedEl = document.getElementById('currentPrecessionSpeed');
 const meanPrecessionSpeedEl = document.getElementById('meanPrecessionSpeed');
 const stdDevPrecessionSpeedEl = document.getElementById('stdDevPrecessionSpeed');
@@ -29,6 +30,7 @@ let precessionChart;
 let allDataPoints = [];      // Armazena todos os pontos {timestamp, angle, originalAngle}
 let isFirstLoad = true;      // Para controlar a configuração inicial do zoom
 let fitLinesActive = false; // Controla se as linhas de ajuste estão ativas/visíveis
+let mod360ScaleActive = false; // Controla se a escala do eixo Y está em modo "pilhas de 360°"
 
 // -----------------------------------------------------------------------------
 // Inicialização do Firebase e App Check
@@ -249,10 +251,14 @@ function initializeChart() {
                     // O zoom/pan já deve ajustar a escala horizontal automaticamente
                 },
                 y: {
-                    title: { display: true, text: 'Ângulo de Precessão (módulo 360°)' },
+                    title: { display: true, text: 'Ângulo de Precessão (°)' },
                     ticks: {
-                        //stepSize: 5, // Ajuste conforme necessário
                         callback: function (value) {
+                            if (mod360ScaleActive) {
+                                // Mostra o valor mod 360, sempre positivo
+                                const modVal = ((value % 360) + 360) % 360;
+                                return modVal.toFixed(0) + '°';
+                            }
                             return value.toFixed(ANGLE_DECIMAL_PLACES);
                         }
                     }
@@ -290,7 +296,49 @@ function initializeChart() {
                     }
                 }
             }
-        }
+        },
+        plugins: [{
+            id: 'mod360BoundaryLines',
+            afterDraw(chart) {
+                if (!mod360ScaleActive) return;
+                const yScale = chart.scales.y;
+                const xScale = chart.scales.x;
+                if (!yScale || !xScale) return;
+
+                const ctx = chart.ctx;
+                const yMin = yScale.min;
+                const yMax = yScale.max;
+
+                // Encontra os múltiplos de 360 dentro do range visível
+                const firstBoundary = Math.ceil(yMin / 360) * 360;
+
+                ctx.save();
+                ctx.strokeStyle = 'rgba(180, 120, 255, 0.55)';
+                ctx.lineWidth = 1.5;
+                ctx.setLineDash([6, 4]);
+
+                for (let boundary = firstBoundary; boundary <= yMax; boundary += 360) {
+                    const yPixel = yScale.getPixelForValue(boundary);
+                    ctx.beginPath();
+                    ctx.moveTo(xScale.left, yPixel);
+                    ctx.lineTo(xScale.right, yPixel);
+                    ctx.stroke();
+
+                    // Label indicando o número do ciclo (ex: "1×360°")
+                    const cycleNum = Math.round(boundary / 360);
+                    if (cycleNum > 0) {
+                        ctx.save();
+                        ctx.setLineDash([]);
+                        ctx.fillStyle = 'rgba(150, 80, 220, 0.85)';
+                        ctx.font = '10px sans-serif';
+                        ctx.textAlign = 'right';
+                        ctx.fillText(`${cycleNum}×360°`, xScale.left - 4, yPixel - 3);
+                        ctx.restore();
+                    }
+                }
+                ctx.restore();
+            }
+        }]
     });
 }
 
@@ -343,8 +391,8 @@ function updateFitLinesIfActive() {
         const lastVisibleTimeHours = timestampToHours(visibleData[visibleData.length - 1].timestamp);
 
         precessionChart.data.datasets[1].data = [
-            { x: visibleData[0].timestamp, y: normalizeAngle(fit.slope * firstVisibleTimeHours + fit.intercept) },
-            { x: visibleData[visibleData.length - 1].timestamp, y: normalizeAngle(fit.slope * lastVisibleTimeHours + fit.intercept) }
+            { x: visibleData[0].timestamp, y: fit.slope * firstVisibleTimeHours + fit.intercept },
+            { x: visibleData[visibleData.length - 1].timestamp, y: fit.slope * lastVisibleTimeHours + fit.intercept }
         ];
         precessionChart.data.datasets[1].hidden = false;
 
@@ -364,8 +412,8 @@ function updateFitLinesIfActive() {
         const interceptTheoretical = meanVisibleOriginalAngle - THEORETICAL_PRECESSION_RATE_DEG_PER_HOUR * meanVisibleTimeHours;
 
         precessionChart.data.datasets[2].data = [
-            { x: visibleData[0].timestamp, y: normalizeAngle(THEORETICAL_PRECESSION_RATE_DEG_PER_HOUR * firstVisibleTimeHours + interceptTheoretical) },
-            { x: visibleData[visibleData.length - 1].timestamp, y: normalizeAngle(THEORETICAL_PRECESSION_RATE_DEG_PER_HOUR * lastVisibleTimeHours + interceptTheoretical) }
+            { x: visibleData[0].timestamp, y: THEORETICAL_PRECESSION_RATE_DEG_PER_HOUR * firstVisibleTimeHours + interceptTheoretical },
+            { x: visibleData[visibleData.length - 1].timestamp, y: THEORETICAL_PRECESSION_RATE_DEG_PER_HOUR * lastVisibleTimeHours + interceptTheoretical }
         ];
         precessionChart.data.datasets[2].hidden = false;
 
@@ -466,7 +514,7 @@ function processDataUpdate() {
     // Mapeia os dados para o gráfico, normalizando o ângulo e guardando o original
     const chartDisplayData = allDataPoints.map(p => ({
         x: p.timestamp,
-        y: normalizeAngle(p.originalAngle) // ângulo para exibição no eixo Y
+        y: p.originalAngle // ângulo bruto, sem módulo 360
     }));
     precessionChart.data.datasets[0].data = chartDisplayData;
 
@@ -531,6 +579,16 @@ function processDataUpdate() {
 
 btnLinearFit.addEventListener('click', performAndDisplayLinearFit);
 btnExportData.addEventListener('click', exportVisibleDataToCSV);
+btnToggleMod360.addEventListener('click', () => {
+    mod360ScaleActive = !mod360ScaleActive;
+    btnToggleMod360.textContent = mod360ScaleActive
+        ? 'Desabilitar Mod 360° (Escala)'
+        : 'Habilitar Mod 360° (Escala)';
+    btnToggleMod360.classList.toggle('active', mod360ScaleActive);
+    if (precessionChart) {
+        precessionChart.update();
+    }
+});
 btnResetZoom.addEventListener('click', () => {
     if (precessionChart) {
         isFirstLoad = true; // Força recálculo da janela inicial na próxima atualização de dados
