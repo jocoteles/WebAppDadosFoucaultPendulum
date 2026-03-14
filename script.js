@@ -628,25 +628,6 @@ dataRef.on('value', (snapshot) => {
                 // Isso encontra o múltiplo do período que torna o dado atual o mais próximo possível do esperado pela tendência.
                 const k = Math.round((predictedAngle - currentRawAngle) / UNWRAP_PERIOD);
                 correctedAngle = currentRawAngle + UNWRAP_PERIOD * k;
-
-                // Log opcional para interrupções longas (> 6 horas) a pedido do usuário
-                if (lastTime !== null && (currentTimestamp - lastTime) > 6 * 60 * 60 * 1000) {
-                    const deltaTimeHours = (currentTimestamp - lastTime) / (1000 * 60 * 60);
-                    const slopeMs = (secondLastAngle !== null && secondLastTime !== null) 
-                        ? (lastAngle - secondLastAngle) / (lastTime - secondLastTime) 
-                        : 0;
-                    const slopeHour = slopeMs * (1000 * 60 * 60);
-
-                    console.log(`[DEBUG] Interrupção longa detectada: ${deltaTimeHours.toFixed(2)} horas`);
-                    console.log(` - Ângulo cru (sensor): ${currentRawAngle.toFixed(4)}°`);
-                    console.log(` - Último ângulo: ${lastAngle.toFixed(4)}°`);
-                    console.log(` - Tendência (slope): ${slopeHour.toFixed(4)} °/h`);
-                    console.log(` - Ângulo previsto: ${predictedAngle.toFixed(4)}°`);
-                    console.log(` - Múltiplo de ${UNWRAP_PERIOD}° (k): ${k}`);
-                    console.log(` - Ângulo corrigido: ${correctedAngle.toFixed(4)}°`);
-                    console.log(` - Diferença (Corrigido - Previsto): ${(correctedAngle - predictedAngle).toFixed(4)}°`);
-                    console.log(` - Movimento total no gap: ${(correctedAngle - lastAngle).toFixed(4)}°`);
-                }
             }
 
             // Atualiza o estado para a próxima iteração
