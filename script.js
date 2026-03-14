@@ -599,13 +599,24 @@ const dataRef = database.ref('pendulum_sensor_data').orderByChild('timestamp');
 dataRef.on('value', (snapshot) => {
     console.log("Novos dados recebidos do Firebase!"); // Log para verificar atualização
     const tempData = [];
+    let lastUnwrappedAngle = null;
     snapshot.forEach((childSnapshot) => {
         const data = childSnapshot.val();
         if (data && typeof data.timestamp === 'number' && typeof data.angle_degrees === 'number') {
+            let currentRawAngle = data.angle_degrees;
+            let correctedAngle = currentRawAngle;
+
+            if (lastUnwrappedAngle !== null) {
+                // Lógica de "Unwrap": y = x - 360 * round((x - y_prev) / 360)
+                // Isso encontra o múltiplo de 360 que torna o dado atual o mais próximo possível do anterior.
+                correctedAngle = currentRawAngle - 360 * Math.round((currentRawAngle - lastUnwrappedAngle) / 360);
+            }
+            lastUnwrappedAngle = correctedAngle;
+
             tempData.push({
                 timestamp: data.timestamp * 1000, // Converte para milisegundos
-                originalAngle: data.angle_degrees, // Salva o ângulo original
-                angle: normalizeAngle(data.angle_degrees) // Ângulo para o eixo Y (será recalculado em processDataUpdate)
+                originalAngle: correctedAngle,    // Agora armazena o ângulo corrigido para o gráfico/ajuste
+                angle: normalizeAngle(currentRawAngle) // Mantém o ângulo módulo 360 (ex: para radar ou bússola, se houver)
             });
         }
     });
