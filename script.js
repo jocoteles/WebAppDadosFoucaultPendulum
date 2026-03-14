@@ -599,22 +599,43 @@ const dataRef = database.ref('pendulum_sensor_data').orderByChild('timestamp');
 dataRef.on('value', (snapshot) => {
     console.log("Novos dados recebidos do Firebase!"); // Log para verificar atualização
     const tempData = [];
-    let lastUnwrappedAngle = null;
+    let lastAngle = null;
+    let lastTime = null;
+    let secondLastAngle = null;
+    let secondLastTime = null;
+
     snapshot.forEach((childSnapshot) => {
         const data = childSnapshot.val();
         if (data && typeof data.timestamp === 'number' && typeof data.angle_degrees === 'number') {
-            let currentRawAngle = data.angle_degrees;
+            const currentTimestamp = data.timestamp * 1000;
+            const currentRawAngle = data.angle_degrees;
             let correctedAngle = currentRawAngle;
 
-            if (lastUnwrappedAngle !== null) {
-                // Lógica de "Unwrap": y = x - 360 * round((x - y_prev) / 360)
-                // Isso encontra o múltiplo de 360 que torna o dado atual o mais próximo possível do anterior.
-                correctedAngle = currentRawAngle - 360 * Math.round((currentRawAngle - lastUnwrappedAngle) / 360);
+            if (lastAngle !== null) {
+                let predictedAngle = lastAngle;
+                
+                // Se temos dois pontos anteriores, usamos a tendência (slope) para prever o próximo ponto
+                if (secondLastAngle !== null && secondLastTime !== null) {
+                    const deltaTime = lastTime - secondLastTime;
+                    if (deltaTime > 0) {
+                        const slope = (lastAngle - secondLastAngle) / deltaTime;
+                        predictedAngle = lastAngle + slope * (currentTimestamp - lastTime);
+                    }
+                }
+
+                // Lógica de "Unwrap": y = x - 360 * round((x - predictedAngle) / 360)
+                // Isso encontra o múltiplo de 360 que torna o dado atual o mais próximo possível do esperado pela tendência.
+                correctedAngle = currentRawAngle - 360 * Math.round((currentRawAngle - predictedAngle) / 360);
             }
-            lastUnwrappedAngle = correctedAngle;
+
+            // Atualiza o estado para a próxima iteração
+            secondLastAngle = lastAngle;
+            secondLastTime = lastTime;
+            lastAngle = correctedAngle;
+            lastTime = currentTimestamp;
 
             tempData.push({
-                timestamp: data.timestamp * 1000, // Converte para milisegundos
+                timestamp: currentTimestamp,
                 originalAngle: correctedAngle,    // Agora armazena o ângulo corrigido para o gráfico/ajuste
                 angle: normalizeAngle(currentRawAngle) // Mantém o ângulo módulo 360 (ex: para radar ou bússola, se houver)
             });
