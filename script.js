@@ -613,6 +613,7 @@ dataRef.on('value', (snapshot) => {
 
             if (lastAngle !== null) {
                 let predictedAngle = lastAngle;
+                const UNWRAP_PERIOD = 180; // Usar 180° devido à simetria do plano de oscilação do pêndulo
                 
                 // Se temos dois pontos anteriores, usamos a tendência (slope) para prever o próximo ponto
                 if (secondLastAngle !== null && secondLastTime !== null) {
@@ -623,10 +624,10 @@ dataRef.on('value', (snapshot) => {
                     }
                 }
 
-                // Lógica de "Unwrap": y = x + 360 * round((predicted - x) / 360)
-                // Isso encontra o múltiplo de 360 (k) que torna o dado atual o mais próximo possível do esperado pela tendência.
-                const k = Math.round((predictedAngle - currentRawAngle) / 360);
-                correctedAngle = currentRawAngle + 360 * k;
+                // Lógica de "Unwrap": y = x + PERIOD * round((predicted - x) / PERIOD)
+                // Isso encontra o múltiplo do período que torna o dado atual o mais próximo possível do esperado pela tendência.
+                const k = Math.round((predictedAngle - currentRawAngle) / UNWRAP_PERIOD);
+                correctedAngle = currentRawAngle + UNWRAP_PERIOD * k;
 
                 // Log opcional para interrupções longas (> 6 horas) a pedido do usuário
                 if (lastTime !== null && (currentTimestamp - lastTime) > 6 * 60 * 60 * 1000) {
@@ -641,9 +642,10 @@ dataRef.on('value', (snapshot) => {
                     console.log(` - Último ângulo: ${lastAngle.toFixed(4)}°`);
                     console.log(` - Tendência (slope): ${slopeHour.toFixed(4)} °/h`);
                     console.log(` - Ângulo previsto: ${predictedAngle.toFixed(4)}°`);
-                    console.log(` - Múltiplo 360 (k): ${k}`);
+                    console.log(` - Múltiplo de ${UNWRAP_PERIOD}° (k): ${k}`);
                     console.log(` - Ângulo corrigido: ${correctedAngle.toFixed(4)}°`);
                     console.log(` - Diferença (Corrigido - Previsto): ${(correctedAngle - predictedAngle).toFixed(4)}°`);
+                    console.log(` - Movimento total no gap: ${(correctedAngle - lastAngle).toFixed(4)}°`);
                 }
             }
 
