@@ -625,7 +625,21 @@ dataRef.on('value', (snapshot) => {
 
                 // Lógica de "Unwrap": y = x - 360 * round((x - predictedAngle) / 360)
                 // Isso encontra o múltiplo de 360 que torna o dado atual o mais próximo possível do esperado pela tendência.
-                correctedAngle = currentRawAngle - 360 * Math.round((currentRawAngle - predictedAngle) / 360);
+                const k = Math.round((currentRawAngle - predictedAngle) / 360);
+                correctedAngle = currentRawAngle - 360 * k;
+
+                // Log opcional para interrupções longas (> 6 horas) a pedido do usuário
+                if (lastTime !== null && (currentTimestamp - lastTime) > 6 * 60 * 60 * 1000) {
+                    const slope = (secondLastAngle !== null && secondLastTime !== null) 
+                        ? (lastAngle - secondLastAngle) / (lastTime - secondLastTime) 
+                        : 0;
+                    console.log(`[DEBUG] Interrupção longa detectada: ${((currentTimestamp - lastTime) / (1000 * 60 * 60)).toFixed(2)} horas`);
+                    console.log(` - Ângulo cru: ${currentRawAngle.toFixed(2)}°`);
+                    console.log(` - Predição (tendência): ${predictedAngle.toFixed(2)}°`);
+                    console.log(` - Slope: ${slope.toFixed(6)} units/ms`);
+                    console.log(` - Múltiplo 360 (k): ${k}`);
+                    console.log(` - Ângulo corrigido: ${correctedAngle.toFixed(2)}°`);
+                }
             }
 
             // Atualiza o estado para a próxima iteração
