@@ -21,6 +21,7 @@ const btnLinearFit = document.getElementById('btnLinearFit');
 const btnExportData = document.getElementById('btnExportData');
 const btnResetZoom = document.getElementById('btnResetZoom');
 const btnToggleMod360 = document.getElementById('btnToggleMod360');
+const btnToggleMod180 = document.getElementById('btnToggleMod180');
 const currentPrecessionSpeedEl = document.getElementById('currentPrecessionSpeed');
 const meanPrecessionSpeedEl = document.getElementById('meanPrecessionSpeed');
 const stdDevPrecessionSpeedEl = document.getElementById('stdDevPrecessionSpeed');
@@ -31,6 +32,7 @@ let allDataPoints = [];      // Armazena todos os pontos {timestamp, angle, orig
 let isFirstLoad = true;      // Para controlar a configuração inicial do zoom
 let fitLinesActive = false; // Controla se as linhas de ajuste estão ativas/visíveis
 let mod360ScaleActive = false; // Controla se a escala do eixo Y está em modo "pilhas de 360°"
+let mod180ScaleActive = false; // Controla se a escala do eixo Y está em modo "pilhas de 180°"
 
 // -----------------------------------------------------------------------------
 // Inicialização do Firebase e App Check
@@ -249,7 +251,11 @@ function initializeChart() {
                     title: { display: true, text: 'Ângulo de Precessão (°)' },
                     ticks: {
                         callback: function (value) {
-                            if (mod360ScaleActive) {
+                            if (mod180ScaleActive) {
+                                // Mostra o valor mod 180, sempre positivo
+                                const modVal = ((value % 180) + 180) % 180;
+                                return modVal.toFixed(0) + '°';
+                            } else if (mod360ScaleActive) {
                                 // Mostra o valor mod 360, sempre positivo
                                 const modVal = ((value % 360) + 360) % 360;
                                 return modVal.toFixed(0) + '°';
@@ -293,41 +299,42 @@ function initializeChart() {
             }
         },
         plugins: [{
-            id: 'mod360BoundaryLines',
+            id: 'modBoundaryLines',
             afterDraw(chart) {
-                if (!mod360ScaleActive) return;
+                if (!mod360ScaleActive && !mod180ScaleActive) return;
                 const yScale = chart.scales.y;
                 const xScale = chart.scales.x;
                 if (!yScale || !xScale) return;
 
+                const step = mod180ScaleActive ? 180 : 360;
                 const ctx = chart.ctx;
                 const yMin = yScale.min;
                 const yMax = yScale.max;
 
-                // Encontra os múltiplos de 360 dentro do range visível
-                const firstBoundary = Math.ceil(yMin / 360) * 360;
+                // Encontra os múltiplos do passo dentro do range visível
+                const firstBoundary = Math.ceil(yMin / step) * step;
 
                 ctx.save();
-                ctx.strokeStyle = 'rgba(180, 120, 255, 0.55)';
+                ctx.strokeStyle = mod180ScaleActive ? 'rgba(255, 150, 50, 0.55)' : 'rgba(180, 120, 255, 0.55)';
                 ctx.lineWidth = 1.5;
                 ctx.setLineDash([6, 4]);
 
-                for (let boundary = firstBoundary; boundary <= yMax; boundary += 360) {
+                for (let boundary = firstBoundary; boundary <= yMax; boundary += step) {
                     const yPixel = yScale.getPixelForValue(boundary);
                     ctx.beginPath();
                     ctx.moveTo(xScale.left, yPixel);
                     ctx.lineTo(xScale.right, yPixel);
                     ctx.stroke();
 
-                    // Label indicando o número do ciclo (ex: "1×360°")
-                    const cycleNum = Math.round(boundary / 360);
+                    // Label indicando o número do ciclo (ex: "1×360°" ou "1×180°")
+                    const cycleNum = Math.round(boundary / step);
                     if (cycleNum > 0) {
                         ctx.save();
                         ctx.setLineDash([]);
-                        ctx.fillStyle = 'rgba(150, 80, 220, 0.85)';
+                        ctx.fillStyle = mod180ScaleActive ? 'rgba(200, 100, 0, 0.85)' : 'rgba(150, 80, 220, 0.85)';
                         ctx.font = '10px sans-serif';
                         ctx.textAlign = 'right';
-                        ctx.fillText(`${cycleNum}×360°`, xScale.left - 4, yPixel - 3);
+                        ctx.fillText(`${cycleNum}×${step}°`, xScale.left - 4, yPixel - 3);
                         ctx.restore();
                     }
                 }
@@ -484,11 +491,11 @@ function exportVisibleDataToCSV() {
         alert("Não há dados visíveis para exportar.");
         return;
     }
-    // Exporta o ângulo módulo 360 e o original
-    let csvContent = "data:text/csv;charset=utf-8,Timestamp (ms),Data Hora,Angulo Mod360 (°),Angulo Original (°)\n";
+    // Exporta o ângulo original (unwrapped) e o módulo 360
+    let csvContent = "data:text/csv;charset=utf-8,Timestamp (ms),Data Hora,Angulo (°),Angulo Mod360 (°)\n";
     visibleData.forEach(p => {
         const dateTimeString = moment(p.timestamp).format('YYYY-MM-DD HH:mm:ss');
-        csvContent += `${p.timestamp},${dateTimeString},${p.angle.toFixed(ANGLE_DECIMAL_PLACES)},${p.originalAngle.toFixed(ANGLE_DECIMAL_PLACES)}\n`;
+        csvContent += `${p.timestamp},${dateTimeString},${p.originalAngle.toFixed(ANGLE_DECIMAL_PLACES)},${p.angle.toFixed(ANGLE_DECIMAL_PLACES)}\n`;
     });
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -576,21 +583,53 @@ btnLinearFit.addEventListener('click', performAndDisplayLinearFit);
 btnExportData.addEventListener('click', exportVisibleDataToCSV);
 btnToggleMod360.addEventListener('click', () => {
     mod360ScaleActive = !mod360ScaleActive;
+    if (mod360ScaleActive) mod180ScaleActive = false; // Mutuamente exclusivos
     btnToggleMod360.textContent = mod360ScaleActive
         ? 'Desabilitar Mod 360° (Escala)'
         : 'Habilitar Mod 360° (Escala)';
     btnToggleMod360.classList.toggle('active', mod360ScaleActive);
+    
+    // Atualiza estado do botão 180
+    btnToggleMod180.textContent = 'Habilitar Mod 180° (Escala)';
+    btnToggleMod180.classList.remove('active');
+
     if (precessionChart) {
         precessionChart.update();
     }
 });
-btnResetZoom.addEventListener('click', () => {
+
+btnToggleMod180.addEventListener('click', () => {
+    mod180ScaleActive = !mod180ScaleActive;
+    if (mod180ScaleActive) mod360ScaleActive = false; // Mutuamente exclusivos
+    btnToggleMod180.textContent = mod180ScaleActive
+        ? 'Desabilitar Mod 180° (Escala)'
+        : 'Habilitar Mod 180° (Escala)';
+    btnToggleMod180.classList.toggle('active', mod180ScaleActive);
+
+    // Atualiza estado do botão 360
+    btnToggleMod360.textContent = 'Habilitar Mod 360° (Escala)';
+    btnToggleMod360.classList.remove('active');
+
     if (precessionChart) {
-        isFirstLoad = true; // Força recálculo da janela inicial na próxima atualização de dados
-        // Se não houver novos dados chegando, o processDataUpdate pode não redefinir o zoom.
-        // Então, forçamos uma redefinição de zoom aqui e depois chamamos processDataUpdate.
-        precessionChart.resetZoom('none'); // Reseta o zoom sem animação
-        processDataUpdate(); // Redesenha com a janela inicial
+        precessionChart.update();
+    }
+});
+
+btnResetZoom.addEventListener('click', () => {
+    if (precessionChart && allDataPoints.length > 0) {
+        // Encontra o range total dos dados
+        const minTime = allDataPoints[0].timestamp;
+        const maxTime = allDataPoints[allDataPoints.length - 1].timestamp;
+        
+        // Define o zoom para abranger todos os dados
+        precessionChart.options.scales.x.min = minTime;
+        precessionChart.options.scales.x.max = maxTime;
+        
+        precessionChart.resetZoom('none'); // Limpa o estado interno do plugin de zoom
+        precessionChart.update();
+        
+        // Garante que as linhas de ajuste acompanhem se estiverem ativas
+        updateFitLinesIfActive();
     }
 });
 
