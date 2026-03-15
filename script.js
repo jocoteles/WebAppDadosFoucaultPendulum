@@ -616,14 +616,10 @@ btnToggleMod180.addEventListener('click', () => {
 });
 
 btnResetZoom.addEventListener('click', () => {
-    if (precessionChart && allDataPoints.length > 0) {
-        // Encontra o range total dos dados
-        const minTime = allDataPoints[0].timestamp;
-        const maxTime = allDataPoints[allDataPoints.length - 1].timestamp;
-        
-        // Define o zoom para abranger todos os dados
-        precessionChart.options.scales.x.min = minTime;
-        precessionChart.options.scales.x.max = maxTime;
+    if (precessionChart) {
+        // Remove limites fixos para que o Chart.js autoescale para todos os dados
+        delete precessionChart.options.scales.x.min;
+        delete precessionChart.options.scales.x.max;
         
         precessionChart.resetZoom('none'); // Limpa o estado interno do plugin de zoom
         precessionChart.update();
