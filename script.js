@@ -616,12 +616,36 @@ btnToggleMod180.addEventListener('click', () => {
 });
 
 btnResetZoom.addEventListener('click', () => {
-    if (precessionChart) {
-        // Remove limites fixos para que o Chart.js autoescale para todos os dados
-        delete precessionChart.options.scales.x.min;
-        delete precessionChart.options.scales.x.max;
+    if (precessionChart && allDataPoints.length > 0) {
+        // Encontra o range total dos dados de tempo (X)
+        const minTime = allDataPoints[0].timestamp;
+        const maxTime = allDataPoints[allDataPoints.length - 1].timestamp;
+
+        // Encontra o range total dos ângulos (Y)
+        let minAngle = Infinity;
+        let maxAngle = -Infinity;
+        allDataPoints.forEach(p => {
+            if (p.originalAngle < minAngle) minAngle = p.originalAngle;
+            if (p.originalAngle > maxAngle) maxAngle = p.originalAngle;
+        });
+
+        // Se houver apenas um valor de ângulo, cria um range em torno dele
+        if (minAngle === maxAngle) {
+            minAngle -= 5;
+            maxAngle += 5;
+        }
+
+        // Calcula um gap (margem) de 5% para cada escala
+        const xMargin = (maxTime - minTime) * 0.05;
+        const yMargin = (maxAngle - minAngle) * 0.05;
+
+        // Define os limites manuais no gráfico com o gap
+        precessionChart.options.scales.x.min = minTime - xMargin;
+        precessionChart.options.scales.x.max = maxTime + xMargin;
+        precessionChart.options.scales.y.min = minAngle - yMargin;
+        precessionChart.options.scales.y.max = maxAngle + yMargin;
         
-        precessionChart.resetZoom('none'); // Limpa o estado interno do plugin de zoom
+        // Atualiza o gráfico para aplicar os novos limites
         precessionChart.update();
         
         // Garante que as linhas de ajuste acompanhem se estiverem ativas
