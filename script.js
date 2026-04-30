@@ -77,38 +77,47 @@ function normalizeAngle(angle) {
 function calculateLinearRegressionWithLib(points) {
     if (points.length < MIN_POINTS_FOR_FIT) return null;
 
-    // Converte os pontos para o formato esperado pela biblioteca: [[x1, y1], [x2, y2], ...]
-    const dataForLib = points.map(p => [p.x, p.y]);
+    const n = points.length;
+    // Deslocar X para o primeiro ponto para melhorar a estabilidade numérica
+    const x0 = points[0].x;
+    const dataForLib = points.map(p => [p.x - x0, p.y]);
 
     try {
-        const linearRegression = ss.linearRegression(dataForLib); // { m: slope, b: intercept }
-        const lineFunction = ss.linearRegressionLine(linearRegression); // y = mx + b
+        const linearRegression = ss.linearRegression(dataForLib); // { m: slope, b: intercept_shifted }
+        const lineFunctionShifted = ss.linearRegressionLine(linearRegression);
 
-        // Calcular R² (coeficiente de determinação)
-        const rSquared = ss.rSquared(dataForLib, lineFunction);
-
-        // Calcular desvio padrão dos resíduos
         let sumSquaredErrors = 0;
+        let sumX = 0;
+        let sumX2 = 0;
+        
         points.forEach(p => {
-            const predictedY = lineFunction(p.x); // ou linearRegression.m * p.x + linearRegression.b
+            const dx = p.x - x0;
+            const predictedY = lineFunctionShifted(dx);
             sumSquaredErrors += Math.pow(p.y - predictedY, 2);
+            sumX += dx;
+            sumX2 += dx * dx;
         });
-        // A fórmula para o desvio padrão dos resíduos (ou erro padrão da regressão) é sqrt(SSE / (n - k - 1))
-        // onde n é o número de pontos e k é o número de preditores (1 para regressão linear simples).
-        // Então, graus de liberdade = n - 2.
-        const n = points.length;
-        const stdDevResiduals = n > MIN_POINTS_FOR_FIT ? Math.sqrt(sumSquaredErrors / (n - MIN_POINTS_FOR_FIT)) : 0;
+
+        // Graus de liberdade para regressão linear simples (y = mx + b) é n - 2
+        const stdDevResiduals = n > 2 ? Math.sqrt(sumSquaredErrors / (n - 2)) : 0;
+
+        // Erro padrão da inclinação (slope error)
+        // SE_slope = stdDevResiduals / sqrt(sum((xi - meanX)^2))
+        // sum((xi - meanX)^2) = sum(xi^2) - (sum(xi)^2 / n)
+        const sumSquaredDeviationsX = sumX2 - (Math.pow(sumX, 2) / n);
+        const slopeError = (n > 2 && sumSquaredDeviationsX > 0) 
+            ? stdDevResiduals / Math.sqrt(sumSquaredDeviationsX) 
+            : 0;
 
         return {
             slope: linearRegression.m,
-            intercept: linearRegression.b,
-            rSquared: rSquared,
-            stdDevResiduals: stdDevResiduals
+            intercept: linearRegression.b - linearRegression.m * x0, // Intercepto original no x=0
+            rSquared: ss.rSquared(dataForLib, lineFunctionShifted),
+            stdDevResiduals: stdDevResiduals,
+            slopeError: slopeError
         };
     } catch (error) {
         console.error("Erro ao calcular regressão linear com simple-statistics:", error);
-        // Isso pode acontecer se, por exemplo, todos os valores de X forem iguais,
-        // levando a uma divisão por zero internamente na biblioteca.
         return null;
     }
 }
@@ -120,17 +129,22 @@ function calculateLinearRegressionWithLib(points) {
  */
 function calculateLinearRegression(points) {
     if (points.length < MIN_POINTS_FOR_FIT) return null;
-    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+    
     const n = points.length;
+    const x0 = points[0].x;
+    let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0, sumY2 = 0;
+    
     points.forEach(p => {
-        sumX += p.x; sumY += p.y; sumXY += p.x * p.y; sumX2 += p.x * p.x; sumY2 += p.y * p.y;
+        const dx = p.x - x0;
+        sumX += dx; sumY += p.y; sumXY += dx * p.y; sumX2 += dx * dx; sumY2 += p.y * p.y;
     });
 
     const denominator = (n * sumX2 - sumX * sumX);
-    if (Math.abs(denominator) < 1e-9) return null; // Evita divisão por zero se todos os X forem iguais
+    if (Math.abs(denominator) < 1e-9) return null;
 
     const slope = (n * sumXY - sumX * sumY) / denominator;
-    const intercept = (sumY - slope * sumX) / n;
+    const interceptShifted = (sumY - slope * sumX) / n;
+    const intercept = interceptShifted - slope * x0;
 
     const rNumerator = (n * sumXY - sumX * sumY);
     const rDenominator = Math.sqrt(denominator * (n * sumY2 - sumY * sumY));
@@ -138,11 +152,18 @@ function calculateLinearRegression(points) {
 
     let sumSquaredErrors = 0;
     points.forEach(p => {
-        const predictedY = slope * p.x + intercept;
+        const dx = p.x - x0;
+        const predictedY = slope * dx + interceptShifted;
         sumSquaredErrors += Math.pow(p.y - predictedY, 2);
     });
-    const stdDevResiduals = n > MIN_POINTS_FOR_FIT ? Math.sqrt(sumSquaredErrors / (n - MIN_POINTS_FOR_FIT)) : 0;
-    return { slope, intercept, rSquared, stdDevResiduals };
+
+    const stdDevResiduals = n > 2 ? Math.sqrt(sumSquaredErrors / (n - 2)) : 0;
+    const sumSquaredDeviationsX = sumX2 - (Math.pow(sumX, 2) / n);
+    const slopeError = (n > 2 && sumSquaredDeviationsX > 0) 
+        ? stdDevResiduals / Math.sqrt(sumSquaredDeviationsX) 
+        : 0;
+
+    return { slope, intercept, rSquared, stdDevResiduals, slopeError };
 }
 
 // -----------------------------------------------------------------------------
@@ -466,7 +487,7 @@ function performAndDisplayLinearFit() {
     const fit = calculateLinearRegressionWithLib(pointsForFit);
 
     if (fit) {
-        meanPrecessionSpeedEl.textContent = `${fit.slope.toFixed(3)} °/hora (R²=${fit.rSquared.toFixed(3)})`;
+        meanPrecessionSpeedEl.textContent = `${fit.slope.toFixed(3)} ± ${fit.slopeError.toFixed(3)} °/hora (R²=${fit.rSquared.toFixed(3)})`;
         stdDevPrecessionSpeedEl.textContent = `${fit.stdDevResiduals.toFixed(ANGLE_DECIMAL_PLACES)} °`;
         fitLinesActive = true;
         updateFitLinesIfActive();
