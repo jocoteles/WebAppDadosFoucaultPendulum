@@ -694,13 +694,16 @@ dataRef.on('value', (snapshot) => {
             if (lastAngle !== null) {
                 let predictedAngle = lastAngle;
                 const UNWRAP_PERIOD = 180; // Usar 180° devido à simetria do plano de oscilação do pêndulo
+                const GAP_THRESHOLD = 30 * 60 * 1000; // 30 minutos em milissegundos
                 
-                // Se temos dois pontos anteriores, usamos a tendência (slope) para prever o próximo ponto
+                // Só usamos a tendência (slope) para prever o próximo ponto se não houver lacunas de tempo (gaps)
                 if (secondLastAngle !== null && secondLastTime !== null) {
                     const deltaTime = lastTime - secondLastTime;
-                    if (deltaTime > 0) {
+                    const extrapolateTime = currentTimestamp - lastTime;
+                    
+                    if (deltaTime > 0 && deltaTime <= GAP_THRESHOLD && extrapolateTime <= GAP_THRESHOLD) {
                         const slope = (lastAngle - secondLastAngle) / deltaTime;
-                        predictedAngle = lastAngle + slope * (currentTimestamp - lastTime);
+                        predictedAngle = lastAngle + slope * extrapolateTime;
                     }
                 }
 
