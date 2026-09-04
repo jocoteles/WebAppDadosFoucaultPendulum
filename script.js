@@ -678,56 +678,51 @@ const dataRef = database.ref('pendulum_sensor_data').orderByChild('timestamp');
 
 dataRef.on('value', (snapshot) => {
     console.log("Novos dados recebidos do Firebase!"); // Log para verificar atualização
-    const tempData = [];
-    let lastAngle = null;
-    let lastTime = null;
-    let secondLastAngle = null;
-    let secondLastTime = null;
+    const rawData = [];
 
     snapshot.forEach((childSnapshot) => {
         const data = childSnapshot.val();
         if (data && typeof data.timestamp === 'number' && typeof data.angle_degrees === 'number') {
-            const currentTimestamp = data.timestamp * 1000;
-            const currentRawAngle = data.angle_degrees;
-            let correctedAngle = currentRawAngle;
-
-            if (lastAngle !== null) {
-                let predictedAngle = lastAngle;
-                const UNWRAP_PERIOD = 180; // Usar 180° devido à simetria do plano de oscilação do pêndulo
-                const GAP_THRESHOLD = 30 * 60 * 1000; // 30 minutos em milissegundos
-                
-                // Só usamos a tendência (slope) para prever o próximo ponto se não houver lacunas de tempo (gaps)
-                if (secondLastAngle !== null && secondLastTime !== null) {
-                    const deltaTime = lastTime - secondLastTime;
-                    const extrapolateTime = currentTimestamp - lastTime;
-                    
-                    if (deltaTime > 0 && deltaTime <= GAP_THRESHOLD && extrapolateTime <= GAP_THRESHOLD) {
-                        const slope = (lastAngle - secondLastAngle) / deltaTime;
-                        predictedAngle = lastAngle + slope * extrapolateTime;
-                    }
-                }
-
-                // Lógica de "Unwrap": y = x + PERIOD * round((predicted - x) / PERIOD)
-                // Isso encontra o múltiplo do período que torna o dado atual o mais próximo possível do esperado pela tendência.
-                const k = Math.round((predictedAngle - currentRawAngle) / UNWRAP_PERIOD);
-                correctedAngle = currentRawAngle + UNWRAP_PERIOD * k;
-            }
-
-            // Atualiza o estado para a próxima iteração
-            secondLastAngle = lastAngle;
-            secondLastTime = lastTime;
-            lastAngle = correctedAngle;
-            lastTime = currentTimestamp;
-
-            tempData.push({
+            const currentTimestamp = data.timestamp > 1e11 ? data.timestamp : data.timestamp * 1000;
+            // Normaliza o ângulo bruto recebido para o intervalo [0, 180)
+            const rawAngle180 = ((data.angle_degrees % 180) + 180) % 180;
+            rawData.push({
                 timestamp: currentTimestamp,
-                originalAngle: correctedAngle,    // Agora armazena o ângulo corrigido para o gráfico/ajuste
-                angle: normalizeAngle(currentRawAngle) // Mantém o ângulo módulo 360 (ex: para radar ou bússola, se houver)
+                rawAngle: rawAngle180
             });
         }
     });
-    // Ordena por timestamp (Firebase geralmente já faz isso com orderByChild, mas é uma garantia)
-    allDataPoints = tempData.sort((a, b) => a.timestamp - b.timestamp);
+
+    // Ordena cronologicamente os dados brutos antes de aplicar o unwrap
+    rawData.sort((a, b) => a.timestamp - b.timestamp);
+
+    const tempData = [];
+    let lastRawAngle = null;
+    let lastUnwrappedAngle = null;
+
+    // Algoritmo de Desembrulhamento de Fase 180° (Shortest Path Phase Unwrapping 180°)
+    for (let i = 0; i < rawData.length; i++) {
+        const item = rawData[i];
+        let unwrappedAngle = item.rawAngle;
+
+        if (lastRawAngle !== null && lastUnwrappedAngle !== null) {
+            // Mapeia a variação angular para o menor caminho no intervalo (-90°, +90°]
+            const diff = item.rawAngle - lastRawAngle;
+            const delta = diff - 180 * Math.round(diff / 180);
+            unwrappedAngle = lastUnwrappedAngle + delta;
+        }
+
+        lastRawAngle = item.rawAngle;
+        lastUnwrappedAngle = unwrappedAngle;
+
+        tempData.push({
+            timestamp: item.timestamp,
+            originalAngle: unwrappedAngle,          // Ângulo acumulado contínuo para o gráfico e ajustes
+            angle: normalizeAngle(item.rawAngle)    // Ângulo módulo 360 (para visualização em bússola/radar)
+        });
+    }
+
+    allDataPoints = tempData;
     processDataUpdate();
 }, (error) => {
     console.error("Erro ao buscar dados do Firebase:", error);
