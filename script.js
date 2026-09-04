@@ -680,39 +680,60 @@ dataRef.on('value', (snapshot) => {
     console.log("Novos dados recebidos do Firebase!"); // Log para verificar atualização
     const rawData = [];
 
+    const MAX_ERROR_DEV = 0.5; // Filtra falhas graves da visão computacional (leituras normais são ~0.001 a 0.04)
+    const MAX_PHYSICAL_SPEED_DEG_PER_HOUR = 25.0; // Limite de velocidade física plausível (~5.67°/h teórica em Araras-SP)
+
     snapshot.forEach((childSnapshot) => {
         const data = childSnapshot.val();
         if (data && typeof data.timestamp === 'number' && typeof data.angle_degrees === 'number') {
+            // Filtro 1: Descarta leituras com falha de rastreio de visão computacional (error_deviation alto)
+            if (typeof data.error_deviation === 'number' && data.error_deviation > MAX_ERROR_DEV) {
+                return;
+            }
+
             const currentTimestamp = data.timestamp > 1e11 ? data.timestamp : data.timestamp * 1000;
             // Normaliza o ângulo bruto recebido para o intervalo [0, 180)
             const rawAngle180 = ((data.angle_degrees % 180) + 180) % 180;
             rawData.push({
                 timestamp: currentTimestamp,
-                rawAngle: rawAngle180
+                rawAngle: rawAngle180,
+                errorDev: data.error_deviation
             });
         }
     });
 
-    // Ordena cronologicamente os dados brutos antes de aplicar o unwrap
+    // Ordena cronologicamente os dados brutos válidos antes de aplicar o unwrap
     rawData.sort((a, b) => a.timestamp - b.timestamp);
 
     const tempData = [];
-    let lastRawAngle = null;
+    let lastValidRaw = null;
+    let lastValidTs = null;
     let lastUnwrappedAngle = null;
 
-    // Algoritmo de Desembrulhamento de Fase 180° (Shortest Path Phase Unwrapping 180°)
+    // Algoritmo Robusto de Desembrulhamento de Fase 180° com Gating de Velocidade Física
     for (let i = 0; i < rawData.length; i++) {
         const item = rawData[i];
         let unwrappedAngle = item.rawAngle;
 
-        if (lastRawAngle !== null && lastUnwrappedAngle !== null) {
-            // Mapeia a variação angular para o menor caminho no intervalo (-90°, +90°]
-            const diff = item.rawAngle - lastRawAngle;
+        if (lastValidRaw !== null && lastUnwrappedAngle !== null && lastValidTs !== null) {
+            const dtHours = (item.timestamp - lastValidTs) / (1000 * 3600);
+            const diff = item.rawAngle - lastValidRaw;
             const delta = diff - 180 * Math.round(diff / 180);
+
+            // Filtro 2: Gating de velocidade física. Se entre medições próximas (<1h)
+            // a velocidade aparente for fisicamente impossível (>25°/h), descarta a amostra discrepante.
+            if (dtHours > 0 && dtHours < 1.0) {
+                const speed = Math.abs(delta) / dtHours;
+                if (speed > MAX_PHYSICAL_SPEED_DEG_PER_HOUR) {
+                    continue; // Ignora ponto ruidoso/outlier
+                }
+            }
+
             unwrappedAngle = lastUnwrappedAngle + delta;
         }
 
-        lastRawAngle = item.rawAngle;
+        lastValidRaw = item.rawAngle;
+        lastValidTs = item.timestamp;
         lastUnwrappedAngle = unwrappedAngle;
 
         tempData.push({
