@@ -20,19 +20,20 @@ const precessionChartCtx = document.getElementById('precessionChart').getContext
 const btnLinearFit = document.getElementById('btnLinearFit');
 const btnExportData = document.getElementById('btnExportData');
 const btnResetZoom = document.getElementById('btnResetZoom');
-const btnToggleMod360 = document.getElementById('btnToggleMod360');
-const btnToggleMod180 = document.getElementById('btnToggleMod180');
+const btnMod180 = document.getElementById('btnMod180');
+const btnMod360 = document.getElementById('btnMod360');
+const btnToggleContinuity = document.getElementById('btnToggleContinuity');
 const currentPrecessionSpeedEl = document.getElementById('currentPrecessionSpeed');
 const meanPrecessionSpeedEl = document.getElementById('meanPrecessionSpeed');
 const stdDevPrecessionSpeedEl = document.getElementById('stdDevPrecessionSpeed');
 
 // Variáveis Globais
 let precessionChart;
-let allDataPoints = [];      // Armazena todos os pontos {timestamp, angle, originalAngle}
-let isFirstLoad = true;      // Para controlar a configuração inicial do zoom
-let fitLinesActive = false; // Controla se as linhas de ajuste estão ativas/visíveis
-let mod360ScaleActive = false; // Controla se a escala do eixo Y está em modo "pilhas de 360°"
-let mod180ScaleActive = false; // Controla se a escala do eixo Y está em modo "pilhas de 180°"
+let allDataPoints = [];          // Armazena todos os pontos {timestamp, angle180, angle360}
+let isFirstLoad = true;          // Para controlar a configuração inicial do zoom
+let fitLinesActive = false;      // Controla se as linhas de ajuste estão ativas/visíveis
+let currentModMode = 180;        // Modo padrão: 180° (opção: 360°)
+let continuityEnabled = true;    // Offset interno de visualização ativo por padrão (sem dente de serra)
 
 // -----------------------------------------------------------------------------
 // Inicialização do Firebase e App Check
@@ -269,19 +270,15 @@ function initializeChart() {
                     // O zoom/pan já deve ajustar a escala horizontal automaticamente
                 },
                 y: {
-                    title: { display: true, text: 'Ângulo de Precessão (°)' },
+                    title: { display: true, text: 'Ângulo de Precessão (Mod 180°)' },
                     ticks: {
                         callback: function (value) {
-                            if (mod180ScaleActive) {
-                                // Mostra o valor mod 180, sempre positivo
-                                const modVal = ((value % 180) + 180) % 180;
-                                return modVal.toFixed(0) + '°';
-                            } else if (mod360ScaleActive) {
-                                // Mostra o valor mod 360, sempre positivo
-                                const modVal = ((value % 360) + 360) % 360;
-                                return modVal.toFixed(0) + '°';
+                            const mod = currentModMode;
+                            const modVal = ((value % mod) + mod) % mod;
+                            if (modVal === 0 && value > 0 && value <= mod) {
+                                return mod + '°';
                             }
-                            return value.toFixed(ANGLE_DECIMAL_PLACES);
+                            return modVal.toFixed(0) + '°';
                         }
                     }
                 }
@@ -293,12 +290,21 @@ function initializeChart() {
                             let label = context.dataset.label || '';
                             if (label) label += ': ';
                             if (context.parsed.y !== null) {
-                                // Mostra o ângulo original no tooltip se disponível (para dados experimentais)
-                                const originalDataPoint = allDataPoints.find(p => p.timestamp === context.parsed.x);
-                                const angleToDisplay = (context.datasetIndex === 0 && originalDataPoint)
-                                    ? originalDataPoint.originalAngle
-                                    : context.parsed.y;
-                                label += angleToDisplay.toFixed(ANGLE_DECIMAL_PLACES) + '°';
+                                if (context.datasetIndex === 0) {
+                                    const originalDataPoint = allDataPoints.find(p => p.timestamp === context.parsed.x);
+                                    if (originalDataPoint) {
+                                        const val = currentModMode === 180 ? originalDataPoint.angle180 : originalDataPoint.angle360;
+                                        label += val.toFixed(ANGLE_DECIMAL_PLACES) + '°';
+                                    } else {
+                                        const mod = currentModMode;
+                                        const val = ((context.parsed.y % mod) + mod) % mod;
+                                        label += val.toFixed(ANGLE_DECIMAL_PLACES) + '°';
+                                    }
+                                } else {
+                                    const mod = currentModMode;
+                                    const val = ((context.parsed.y % mod) + mod) % mod;
+                                    label += val.toFixed(ANGLE_DECIMAL_PLACES) + '°';
+                                }
                             }
                             return label;
                         }
@@ -322,12 +328,12 @@ function initializeChart() {
         plugins: [{
             id: 'modBoundaryLines',
             afterDraw(chart) {
-                if (!mod360ScaleActive && !mod180ScaleActive) return;
+                if (!continuityEnabled) return;
                 const yScale = chart.scales.y;
                 const xScale = chart.scales.x;
                 if (!yScale || !xScale) return;
 
-                const step = mod180ScaleActive ? 180 : 360;
+                const step = currentModMode;
                 const ctx = chart.ctx;
                 const yMin = yScale.min;
                 const yMax = yScale.max;
@@ -336,28 +342,26 @@ function initializeChart() {
                 const firstBoundary = Math.ceil(yMin / step) * step;
 
                 ctx.save();
-                ctx.strokeStyle = mod180ScaleActive ? 'rgba(255, 150, 50, 0.55)' : 'rgba(180, 120, 255, 0.55)';
+                ctx.strokeStyle = currentModMode === 180 ? 'rgba(255, 150, 50, 0.55)' : 'rgba(180, 120, 255, 0.55)';
                 ctx.lineWidth = 1.5;
                 ctx.setLineDash([6, 4]);
 
                 for (let boundary = firstBoundary; boundary <= yMax; boundary += step) {
+                    if (boundary === 0) continue;
                     const yPixel = yScale.getPixelForValue(boundary);
                     ctx.beginPath();
                     ctx.moveTo(xScale.left, yPixel);
                     ctx.lineTo(xScale.right, yPixel);
                     ctx.stroke();
 
-                    // Label indicando o número do ciclo (ex: "1×360°" ou "1×180°")
-                    const cycleNum = Math.round(boundary / step);
-                    if (cycleNum > 0) {
-                        ctx.save();
-                        ctx.setLineDash([]);
-                        ctx.fillStyle = mod180ScaleActive ? 'rgba(200, 100, 0, 0.85)' : 'rgba(150, 80, 220, 0.85)';
-                        ctx.font = '10px sans-serif';
-                        ctx.textAlign = 'right';
-                        ctx.fillText(`${cycleNum}×${step}°`, xScale.left - 4, yPixel - 3);
-                        ctx.restore();
-                    }
+                    // Label indicando a fronteira do ciclo (ex: "180°" ou "360°")
+                    ctx.save();
+                    ctx.setLineDash([]);
+                    ctx.fillStyle = currentModMode === 180 ? 'rgba(200, 100, 0, 0.85)' : 'rgba(150, 80, 220, 0.85)';
+                    ctx.font = '10px sans-serif';
+                    ctx.textAlign = 'right';
+                    ctx.fillText(`${boundary}°`, xScale.left - 4, yPixel - 3);
+                    ctx.restore();
                 }
                 ctx.restore();
             }
@@ -366,23 +370,99 @@ function initializeChart() {
 }
 
 /**
+ * Prepara os pontos para exibição no gráfico de acordo com o modo ativo
+ * (Mod 180° ou Mod 360°) e a configuração de continuidade (offset interno).
+ * @returns {Array<{x: number, y: number}>} Pontos para plotagem.
+ */
+function getDisplayPoints() {
+    if (!allDataPoints.length) return [];
+    const mod = currentModMode; // 180 ou 360
+
+    // Se a continuidade (offset interno) estiver desativada, plota em módulo puro (dente de serra natural)
+    if (!continuityEnabled) {
+        return allDataPoints.map(p => ({
+            x: p.timestamp,
+            y: mod === 180 ? p.angle180 : p.angle360
+        }));
+    }
+
+    // Quando continuidade (offset interno) está ativa:
+    const xMin = precessionChart?.scales?.x?.min;
+    const xMax = precessionChart?.scales?.x?.max;
+
+    // Se for visualização de longo prazo (> 72h) ou sem limites definidos (ex: zoom total),
+    // exibe em módulo puro para que a visão global fique no intervalo [0, 180] ou [0, 360]
+    if (!xMin || !xMax || (xMax - xMin > 72 * 3600 * 1000)) {
+        return allDataPoints.map(p => ({
+            x: p.timestamp,
+            y: mod === 180 ? p.angle180 : p.angle360
+        }));
+    }
+
+    // Para janelas de análise (<= 72h, como a inicial de 3h):
+    // Aplica offset interno de visualização para continuidade perfeita
+    let startIndex = 0;
+    let endIndex = allDataPoints.length - 1;
+
+    for (let i = 0; i < allDataPoints.length; i++) {
+        if (allDataPoints[i].timestamp >= xMin) {
+            startIndex = Math.max(0, i - 20);
+            break;
+        }
+    }
+    for (let i = allDataPoints.length - 1; i >= 0; i--) {
+        if (allDataPoints[i].timestamp <= xMax) {
+            endIndex = Math.min(allDataPoints.length - 1, i + 20);
+            break;
+        }
+    }
+
+    const result = [];
+    const baseAngle = mod === 180 ? allDataPoints[startIndex].angle180 : allDataPoints[startIndex].angle360;
+    let currentY = baseAngle;
+    result.push({ x: allDataPoints[startIndex].timestamp, y: currentY });
+
+    let lastRaw = allDataPoints[startIndex].angle180;
+    for (let i = startIndex + 1; i <= endIndex; i++) {
+        const p = allDataPoints[i];
+        const diff = p.angle180 - lastRaw;
+        const delta = diff - 180 * Math.round(diff / 180);
+        currentY += delta;
+        lastRaw = p.angle180;
+        result.push({ x: p.timestamp, y: currentY });
+    }
+    return result;
+}
+
+/**
+ * Atualiza os dados exibidos no gráfico e o título do eixo Y.
+ */
+function updateChartDisplayData() {
+    if (!precessionChart) return;
+    precessionChart.data.datasets[0].data = getDisplayPoints();
+    precessionChart.options.scales.y.title.text = currentModMode === 180 
+        ? 'Ângulo de Precessão (Mod 180°)' 
+        : 'Ângulo de Precessão (Mod 360°)';
+}
+
+/**
  * Obtém os dados de `allDataPoints` que estão atualmente visíveis no gráfico.
- * @returns {Array<{timestamp: number, angle: number, originalAngle: number}>} Array de pontos visíveis.
+ * @returns {Array<{timestamp: number, angle180: number, angle360: number}>} Array de pontos visíveis.
  */
 function getVisibleChartData() {
     if (!precessionChart || !allDataPoints.length) return [];
-    const { min: minVisibleTime, max: maxVisibleTime } = precessionChart.scales.x;
+    const minVisibleTime = precessionChart.scales.x.min;
+    const maxVisibleTime = precessionChart.scales.x.max;
+    if (minVisibleTime === undefined || maxVisibleTime === undefined) return allDataPoints;
     return allDataPoints.filter(p => p.timestamp >= minVisibleTime && p.timestamp <= maxVisibleTime);
 }
-
 
 /**
  * Atualiza as linhas de ajuste linear e teórica se estiverem ativas.
  * É chamada após zoom/pan ou quando novos dados chegam e o ajuste está ativo.
  */
 function updateFitLinesIfActive() {
-    if (!precessionChart || !fitLinesActive) { // Verifica a flag global
-        // Se não estiverem ativas, garante que estejam escondidas
+    if (!precessionChart || !fitLinesActive) {
         if (precessionChart) {
             precessionChart.data.datasets[1].hidden = true;
             precessionChart.data.datasets[1].data = [];
@@ -401,15 +481,30 @@ function updateFitLinesIfActive() {
         return;
     }
 
-    // Para o ajuste, usar os ângulos originais (não módulo 360) para um ajuste linear contínuo
-    const pointsForFit = visibleData.map(p => ({
-        x: timestampToHours(p.timestamp), // Tempo em HORAS
-        y: p.originalAngle // Ângulo original (não módulo 360)
-    }));
+    // Para o ajuste linear, desdobra localmente os pontos se a continuidade estiver ativa
+    let pointsForFit;
+    if (continuityEnabled) {
+        const baseAngle = currentModMode === 180 ? visibleData[0].angle180 : visibleData[0].angle360;
+        let currentY = baseAngle;
+        pointsForFit = [{ x: timestampToHours(visibleData[0].timestamp), y: currentY }];
+        let lastRaw = visibleData[0].angle180;
+        for (let i = 1; i < visibleData.length; i++) {
+            const diff = visibleData[i].angle180 - lastRaw;
+            const delta = diff - 180 * Math.round(diff / 180);
+            currentY += delta;
+            lastRaw = visibleData[i].angle180;
+            pointsForFit.push({ x: timestampToHours(visibleData[i].timestamp), y: currentY });
+        }
+    } else {
+        pointsForFit = visibleData.map(p => ({
+            x: timestampToHours(p.timestamp),
+            y: currentModMode === 180 ? p.angle180 : p.angle360
+        }));
+    }
+
     const fit = calculateLinearRegressionWithLib(pointsForFit);
 
     if (fit) {
-        // Linha de Ajuste Linear
         const firstVisibleTimeHours = timestampToHours(visibleData[0].timestamp);
         const lastVisibleTimeHours = timestampToHours(visibleData[visibleData.length - 1].timestamp);
 
@@ -419,27 +514,23 @@ function updateFitLinesIfActive() {
         ];
         precessionChart.data.datasets[1].hidden = false;
 
-
         // Linha Teórica
-        // 1. Calcular o tempo médio e o ângulo original médio dos dados visíveis
         let sumVisibleTimeHours = 0;
-        let sumVisibleOriginalAngle = 0;
-        visibleData.forEach(p => {
-            sumVisibleTimeHours += timestampToHours(p.timestamp);
-            sumVisibleOriginalAngle += p.originalAngle;
+        let sumVisibleY = 0;
+        pointsForFit.forEach(p => {
+            sumVisibleTimeHours += p.x;
+            sumVisibleY += p.y;
         });
-        const meanVisibleTimeHours = sumVisibleTimeHours / visibleData.length;
-        const meanVisibleOriginalAngle = sumVisibleOriginalAngle / visibleData.length;
+        const meanVisibleTimeHours = sumVisibleTimeHours / pointsForFit.length;
+        const meanVisibleY = sumVisibleY / pointsForFit.length;
 
-        // 2. A linha teórica passará por (meanVisibleTimeHours, meanVisibleOriginalAngle) com a inclinação teórica
-        const interceptTheoretical = meanVisibleOriginalAngle - THEORETICAL_PRECESSION_RATE_DEG_PER_HOUR * meanVisibleTimeHours;
+        const interceptTheoretical = meanVisibleY - THEORETICAL_PRECESSION_RATE_DEG_PER_HOUR * meanVisibleTimeHours;
 
         precessionChart.data.datasets[2].data = [
             { x: visibleData[0].timestamp, y: THEORETICAL_PRECESSION_RATE_DEG_PER_HOUR * firstVisibleTimeHours + interceptTheoretical },
             { x: visibleData[visibleData.length - 1].timestamp, y: THEORETICAL_PRECESSION_RATE_DEG_PER_HOUR * lastVisibleTimeHours + interceptTheoretical }
         ];
         precessionChart.data.datasets[2].hidden = false;
-
     } else {
         precessionChart.data.datasets[1].data = [];
         precessionChart.data.datasets[2].data = [];
@@ -447,14 +538,14 @@ function updateFitLinesIfActive() {
     precessionChart.update('none');
 }
 
-
 /**
  * Chamado após uma interação de zoom ou pan.
  */
 function handleZoomPan() {
-    // A escala X é atualizada automaticamente pelo Chart.js e pelo plugin de zoom.
-    // A escala Y é fixa (0-360).
-    //updateFitLinesIfActive(); // Atualiza as linhas de ajuste com base nos novos dados visíveis
+    if (!precessionChart || !allDataPoints.length) return;
+    updateChartDisplayData();
+    precessionChart.update('none');
+    updateFitLinesIfActive();
 }
 
 /**
@@ -478,12 +569,26 @@ function performAndDisplayLinearFit() {
         return;
     }
 
-    // Usar ângulos originais para o cálculo do ajuste linear
-    const pointsForFit = visibleData.map(p => ({
-        x: timestampToHours(p.timestamp), // Tempo em HORAS
-        y: p.originalAngle
-    }));
-    console.log("Dados para ajuste linear:", JSON.stringify(pointsForFit));
+    let pointsForFit;
+    if (continuityEnabled) {
+        const baseAngle = currentModMode === 180 ? visibleData[0].angle180 : visibleData[0].angle360;
+        let currentY = baseAngle;
+        pointsForFit = [{ x: timestampToHours(visibleData[0].timestamp), y: currentY }];
+        let lastRaw = visibleData[0].angle180;
+        for (let i = 1; i < visibleData.length; i++) {
+            const diff = visibleData[i].angle180 - lastRaw;
+            const delta = diff - 180 * Math.round(diff / 180);
+            currentY += delta;
+            lastRaw = visibleData[i].angle180;
+            pointsForFit.push({ x: timestampToHours(visibleData[i].timestamp), y: currentY });
+        }
+    } else {
+        pointsForFit = visibleData.map(p => ({
+            x: timestampToHours(p.timestamp),
+            y: currentModMode === 180 ? p.angle180 : p.angle360
+        }));
+    }
+
     const fit = calculateLinearRegressionWithLib(pointsForFit);
 
     if (fit) {
@@ -500,7 +605,7 @@ function performAndDisplayLinearFit() {
         precessionChart.data.datasets[2].hidden = true;
         fitLinesActive = false;
     }
-    precessionChart.update(); // Update principal após o clique no botão
+    precessionChart.update();
 }
 
 /**
@@ -512,11 +617,11 @@ function exportVisibleDataToCSV() {
         alert("Não há dados visíveis para exportar.");
         return;
     }
-    // Exporta o ângulo original (unwrapped) e o módulo 360
-    let csvContent = "data:text/csv;charset=utf-8,Timestamp (ms),Data Hora,Angulo (°),Angulo Mod360 (°)\n";
+    // Exporta o ângulo mod 180 e mod 360 (valores reais, sem acúmulo infinito)
+    let csvContent = "data:text/csv;charset=utf-8,Timestamp (ms),Data Hora,Angulo Mod180 (°),Angulo Mod360 (°)\n";
     visibleData.forEach(p => {
         const dateTimeString = moment(p.timestamp).format('YYYY-MM-DD HH:mm:ss');
-        csvContent += `${p.timestamp},${dateTimeString},${p.originalAngle.toFixed(ANGLE_DECIMAL_PLACES)},${p.angle.toFixed(ANGLE_DECIMAL_PLACES)}\n`;
+        csvContent += `${p.timestamp},${dateTimeString},${p.angle180.toFixed(ANGLE_DECIMAL_PLACES)},${p.angle360.toFixed(ANGLE_DECIMAL_PLACES)}\n`;
     });
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement("a");
@@ -534,20 +639,14 @@ function exportVisibleDataToCSV() {
 function processDataUpdate() {
     if (!precessionChart) return;
 
-    // Mapeia os dados para o gráfico, normalizando o ângulo e guardando o original
-    const chartDisplayData = allDataPoints.map(p => ({
-        x: p.timestamp,
-        y: p.originalAngle // ângulo bruto, sem módulo 360
-    }));
-    precessionChart.data.datasets[0].data = chartDisplayData;
-
-    // Calcula velocidade atual com os dois últimos pontos de allDataPoints (usando ângulos originais)
+    // Calcula velocidade atual com os dois últimos pontos de allDataPoints
     if (allDataPoints.length >= 2) {
         const lastPoint = allDataPoints[allDataPoints.length - 1];
         const secondLastPoint = allDataPoints[allDataPoints.length - 2];
         const deltaTimeHours = (lastPoint.timestamp - secondLastPoint.timestamp) / (1000 * 60 * 60);
         if (deltaTimeHours > 0) {
-            const deltaAngle = lastPoint.originalAngle - secondLastPoint.originalAngle; // Usa originalAngle
+            const diff = lastPoint.angle180 - secondLastPoint.angle180;
+            const deltaAngle = diff - 180 * Math.round(diff / 180);
             const currentSpeed = deltaAngle / deltaTimeHours;
             currentPrecessionSpeedEl.textContent = `${currentSpeed.toFixed(2)} °/hora`;
         } else {
@@ -563,11 +662,9 @@ function processDataUpdate() {
         let initialMaxTimestamp = allDataPoints[allDataPoints.length - 1].timestamp; // Último ponto
 
         if (allDataPoints.length === 1) {
-            // Se houver apenas um ponto, crie uma pequena janela ao redor dele
             initialMinTimestamp = allDataPoints[0].timestamp - (1 * 1000 * 60 * 60); // 1 hora antes
             initialMaxTimestamp = allDataPoints[0].timestamp + (1 * 1000 * 60 * 60); // 1 hora depois
         } else {
-            // Lógica existente para 3 horas ou todos os pontos limitados
             const threeHoursAgo = initialMaxTimestamp - (INITIAL_VIEW_HOURS * 1000 * 60 * 60);
             const firstPointOverallTimestamp = allDataPoints[0].timestamp;
 
@@ -579,21 +676,40 @@ function processDataUpdate() {
             }
         }
 
-        // Aplica ao gráfico diretamente, o Chart.js irá pegar nas opções do Chart
+        // Aplica ao gráfico diretamente
         precessionChart.options.scales.x.min = initialMinTimestamp;
         precessionChart.options.scales.x.max = initialMaxTimestamp;
 
+        // Prepara os pontos com offset de visualização
+        const displayData = getDisplayPoints();
+        precessionChart.data.datasets[0].data = displayData;
+
+        // Ajusta limites do eixo Y com margem em torno dos pontos visíveis
+        if (displayData.length > 0) {
+            let minY = Infinity, maxY = -Infinity;
+            displayData.forEach(p => {
+                if (p.x >= initialMinTimestamp && p.x <= initialMaxTimestamp) {
+                    if (p.y < minY) minY = p.y;
+                    if (p.y > maxY) maxY = p.y;
+                }
+            });
+            if (minY !== Infinity && maxY !== -Infinity) {
+                const margin = Math.max(3, (maxY - minY) * 0.15);
+                precessionChart.options.scales.y.min = minY - margin;
+                precessionChart.options.scales.y.max = maxY + margin;
+            }
+        }
+
         isFirstLoad = false;
     } else if (isFirstLoad && allDataPoints.length === 0) {
-        // Se não houver dados na primeira carga, limpe min/max para que o Chart.js não tente usar valores antigos
         delete precessionChart.options.scales.x.min;
         delete precessionChart.options.scales.x.max;
-        isFirstLoad = false; // Ainda considera a primeira carga "tratada"
+        isFirstLoad = false;
+    } else {
+        updateChartDisplayData();
     }
 
-
-    //updateFitLinesIfActive();
-    precessionChart.update(); // Atualiza o gráfico
+    precessionChart.update();
 }
 
 // -----------------------------------------------------------------------------
@@ -602,38 +718,60 @@ function processDataUpdate() {
 
 btnLinearFit.addEventListener('click', performAndDisplayLinearFit);
 btnExportData.addEventListener('click', exportVisibleDataToCSV);
-btnToggleMod360.addEventListener('click', () => {
-    mod360ScaleActive = !mod360ScaleActive;
-    if (mod360ScaleActive) mod180ScaleActive = false; // Mutuamente exclusivos
-    btnToggleMod360.textContent = mod360ScaleActive
-        ? 'Desabilitar Mod 360° (Escala)'
-        : 'Habilitar Mod 360° (Escala)';
-    btnToggleMod360.classList.toggle('active', mod360ScaleActive);
-    
-    // Atualiza estado do botão 180
-    btnToggleMod180.textContent = 'Habilitar Mod 180° (Escala)';
-    btnToggleMod180.classList.remove('active');
 
-    if (precessionChart) {
-        precessionChart.update();
+btnMod180.addEventListener('click', () => {
+    if (currentModMode === 180) return;
+    currentModMode = 180;
+    btnMod180.classList.add('active');
+    btnMod180.classList.remove('inactive-mode');
+    btnMod360.classList.remove('active');
+    btnMod360.classList.add('inactive-mode');
+
+    // Se estiver em visualização global (sem limites ou janela > 72h), atualiza a escala Y
+    const xMin = precessionChart?.scales?.x?.min;
+    const xMax = precessionChart?.scales?.x?.max;
+    if (!xMin || !xMax || (xMax - xMin > 72 * 3600 * 1000)) {
+        precessionChart.options.scales.y.min = -180 * 0.05;
+        precessionChart.options.scales.y.max = 180 * 1.05;
     }
+
+    updateChartDisplayData();
+    precessionChart.update();
+    updateFitLinesIfActive();
 });
 
-btnToggleMod180.addEventListener('click', () => {
-    mod180ScaleActive = !mod180ScaleActive;
-    if (mod180ScaleActive) mod360ScaleActive = false; // Mutuamente exclusivos
-    btnToggleMod180.textContent = mod180ScaleActive
-        ? 'Desabilitar Mod 180° (Escala)'
-        : 'Habilitar Mod 180° (Escala)';
-    btnToggleMod180.classList.toggle('active', mod180ScaleActive);
+btnMod360.addEventListener('click', () => {
+    if (currentModMode === 360) return;
+    currentModMode = 360;
+    btnMod360.classList.add('active');
+    btnMod360.classList.remove('inactive-mode');
+    btnMod180.classList.remove('active');
+    btnMod180.classList.add('inactive-mode');
 
-    // Atualiza estado do botão 360
-    btnToggleMod360.textContent = 'Habilitar Mod 360° (Escala)';
-    btnToggleMod360.classList.remove('active');
-
-    if (precessionChart) {
-        precessionChart.update();
+    // Se estiver em visualização global (sem limites ou janela > 72h), atualiza a escala Y
+    const xMin = precessionChart?.scales?.x?.min;
+    const xMax = precessionChart?.scales?.x?.max;
+    if (!xMin || !xMax || (xMax - xMin > 72 * 3600 * 1000)) {
+        precessionChart.options.scales.y.min = -360 * 0.05;
+        precessionChart.options.scales.y.max = 360 * 1.05;
     }
+
+    updateChartDisplayData();
+    precessionChart.update();
+    updateFitLinesIfActive();
+});
+
+btnToggleContinuity.addEventListener('click', () => {
+    continuityEnabled = !continuityEnabled;
+    btnToggleContinuity.classList.toggle('active', continuityEnabled);
+    btnToggleContinuity.classList.toggle('inactive-mode', !continuityEnabled);
+    btnToggleContinuity.textContent = continuityEnabled
+        ? 'Continuidade: Ativa'
+        : 'Continuidade: Desativada';
+
+    updateChartDisplayData();
+    precessionChart.update();
+    updateFitLinesIfActive();
 });
 
 btnResetZoom.addEventListener('click', () => {
@@ -641,35 +779,19 @@ btnResetZoom.addEventListener('click', () => {
         // Encontra o range total dos dados de tempo (X)
         const minTime = allDataPoints[0].timestamp;
         const maxTime = allDataPoints[allDataPoints.length - 1].timestamp;
+        const xMargin = (maxTime - minTime) * 0.02;
 
-        // Encontra o range total dos ângulos (Y)
-        let minAngle = Infinity;
-        let maxAngle = -Infinity;
-        allDataPoints.forEach(p => {
-            if (p.originalAngle < minAngle) minAngle = p.originalAngle;
-            if (p.originalAngle > maxAngle) maxAngle = p.originalAngle;
-        });
-
-        // Se houver apenas um valor de ângulo, cria um range em torno dele
-        if (minAngle === maxAngle) {
-            minAngle -= 5;
-            maxAngle += 5;
-        }
-
-        // Calcula um gap (margem) de 5% para cada escala
-        const xMargin = (maxTime - minTime) * 0.05;
-        const yMargin = (maxAngle - minAngle) * 0.05;
-
-        // Define os limites manuais no gráfico com o gap
+        // Limites Y estritamente de acordo com o modo ativo:
+        // Mod 180: 0° a 180°
+        // Mod 360: 0° a 360°
         precessionChart.options.scales.x.min = minTime - xMargin;
         precessionChart.options.scales.x.max = maxTime + xMargin;
-        precessionChart.options.scales.y.min = minAngle - yMargin;
-        precessionChart.options.scales.y.max = maxAngle + yMargin;
-        
-        // Atualiza o gráfico para aplicar os novos limites
+        precessionChart.options.scales.y.min = -currentModMode * 0.05;
+        precessionChart.options.scales.y.max = currentModMode * 1.05;
+
+        precessionChart.resetZoom('none');
+        updateChartDisplayData();
         precessionChart.update();
-        
-        // Garante que as linhas de ajuste acompanhem se estiverem ativas
         updateFitLinesIfActive();
     }
 });
@@ -677,7 +799,7 @@ btnResetZoom.addEventListener('click', () => {
 const dataRef = database.ref('pendulum_sensor_data').orderByChild('timestamp');
 
 dataRef.on('value', (snapshot) => {
-    console.log("Novos dados recebidos do Firebase!"); // Log para verificar atualização
+    console.log("Novos dados recebidos do Firebase!");
     const rawData = [];
 
     const MAX_ERROR_DEV = 0.5; // Filtra falhas graves da visão computacional (leituras normais são ~0.001 a 0.04)
@@ -686,7 +808,7 @@ dataRef.on('value', (snapshot) => {
     snapshot.forEach((childSnapshot) => {
         const data = childSnapshot.val();
         if (data && typeof data.timestamp === 'number' && typeof data.angle_degrees === 'number') {
-            // Filtro 1: Descarta leituras com falha de rastreio de visão computacional (error_deviation alto)
+            // Filtro 1: Descarta leituras com falha de rastreio de visão computacional
             if (typeof data.error_deviation === 'number' && data.error_deviation > MAX_ERROR_DEV) {
                 return;
             }
@@ -702,44 +824,48 @@ dataRef.on('value', (snapshot) => {
         }
     });
 
-    // Ordena cronologicamente os dados brutos válidos antes de aplicar o unwrap
+    // Ordena cronologicamente os dados brutos válidos
     rawData.sort((a, b) => a.timestamp - b.timestamp);
 
     const tempData = [];
     let lastValidRaw = null;
     let lastValidTs = null;
-    let lastUnwrappedAngle = null;
+    let cumulativeAngle = null;
 
-    // Algoritmo Robusto de Desembrulhamento de Fase 180° com Gating de Velocidade Física
+    // Rastreia passos incrementais para ciclo 360 e filtragem física
     for (let i = 0; i < rawData.length; i++) {
         const item = rawData[i];
-        let unwrappedAngle = item.rawAngle;
 
-        if (lastValidRaw !== null && lastUnwrappedAngle !== null && lastValidTs !== null) {
+        if (lastValidRaw === null) {
+            cumulativeAngle = item.rawAngle;
+        } else {
             const dtHours = (item.timestamp - lastValidTs) / (1000 * 3600);
             const diff = item.rawAngle - lastValidRaw;
             const delta = diff - 180 * Math.round(diff / 180);
 
-            // Filtro 2: Gating de velocidade física. Se entre medições próximas (<1h)
-            // a velocidade aparente for fisicamente impossível (>25°/h), descarta a amostra discrepante.
+            // Filtro 2: Gating de velocidade física
             if (dtHours > 0 && dtHours < 1.0) {
                 const speed = Math.abs(delta) / dtHours;
                 if (speed > MAX_PHYSICAL_SPEED_DEG_PER_HOUR) {
-                    continue; // Ignora ponto ruidoso/outlier
+                    continue; // Ignora ponto discrepante
                 }
             }
 
-            unwrappedAngle = lastUnwrappedAngle + delta;
+            cumulativeAngle += delta;
         }
 
         lastValidRaw = item.rawAngle;
         lastValidTs = item.timestamp;
-        lastUnwrappedAngle = unwrappedAngle;
+
+        // Mod 180: estritamente no intervalo [0, 180)
+        const a180 = ((item.rawAngle % 180) + 180) % 180;
+        // Mod 360: estritamente no intervalo [0, 360)
+        const a360 = ((cumulativeAngle % 360) + 360) % 360;
 
         tempData.push({
             timestamp: item.timestamp,
-            originalAngle: unwrappedAngle,          // Ângulo acumulado contínuo para o gráfico e ajustes
-            angle: normalizeAngle(item.rawAngle)    // Ângulo módulo 360 (para visualização em bússola/radar)
+            angle180: a180,
+            angle360: a360
         });
     }
 

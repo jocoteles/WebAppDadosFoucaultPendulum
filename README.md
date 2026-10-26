@@ -8,14 +8,16 @@ Além de apenas observar, a aplicação permite que qualquer pessoa interessada 
 
 ## Funcionalidades da Aplicação
 
-*   **Gráfico Interativo:** Visualização em tempo real do ângulo de precessão versus tempo. O gráfico suporta *zoom* e *pan* (arrastar), otimizando a visualização para longos períodos de tempo.
-*   **Escala em Pilhas de 360° (Mod 360°):** Um botão de alternância permite mudar a visualização do eixo vertical entre dois modos, sem alterar a posição dos dados no gráfico:
-    *   **Desabilitado (padrão):** O eixo Y exibe o ângulo acumulado real (ex.: 361°, 722°, 1083°...), ideal para verificar a tendência linear da precessão ao longo do tempo.
-    *   **Habilitado:** O eixo Y exibe a escala de forma cíclica — os *labels* são apresentados em módulo 360° (de 0° a 360°, repetindo-se), de maneira análoga a um papel semilog, porém com espaçamento linear. Linhas divisórias tracejadas são adicionadas automaticamente a cada múltiplo de 360° para facilitar a leitura dos ciclos completos.
-*   **Ajuste Linear Estatístico:** É possível realizar uma regressão linear sobre os dados que estão visíveis na tela no momento, calculando a velocidade média de precessão experimental.
-*   **Comparação Teórica:** A aplicação sobrepõe aos dados reais uma reta representando a velocidade teórica esperada da precessão para a localidade de Araras-SP.
-*   **Painel de Informações:** Exibição da velocidade instantânea do pêndulo e estatísticas básicas de desvio do experimento.
-*   **Exportação de Dados:** Os usuários podem baixar a parte visível do gráfico em formato `.csv` para análises mais aprofundadas em softwares de planilhas locais.
+*   **Gráfico Interativo:** Visualização em tempo real do ângulo de precessão versus tempo. O gráfico suporta *zoom* e *pan* (arrastar), otimizando a visualização tanto para períodos detalhados quanto para longos intervalos históricos.
+*   **Mod 180° (Padrão) e Mod 360° (Opção):** A aplicação reflete diretamente a simetria de oscilação do plano do pêndulo registrada no Firebase:
+    *   **Mod 180° (Padrão):** O eixo e os dados representam o intervalo fundamental de 0° a 180°, compatível com os dados brutos de visão computacional.
+    *   **Mod 360° (Opção):** Permite acompanhar o ciclo de precessão estendido para uma rotação circular completa de 0° a 360°.
+    *   **Sem Ângulos Acumulados ao Infinito:** Os dados nunca somam ângulos indefinidamente até dezenas de milhares de graus. O "Resetar Zoom" enquadra toda a série histórica compactamente dentro do intervalo de 0° a 180° (ou 360°).
+*   **Offset Interno de Visualização (Continuidade):** Para que a curva não sofra quebras artificiais do tipo "dente de serra" quando o ângulo passa pelas fronteiras de 180° ou 360° durante uma sessão de análise, o gráfico aplica internamente um offset de continuidade apenas na janela ativa observada. Isso mantém a evolução física suave e permite que a regressão linear calcule a taxa de precessão exata. A continuidade pode ser alternada a qualquer momento pelo botão de controle.
+*   **Ajuste Linear Estatístico:** É possível realizar uma regressão linear sobre os dados visíveis na tela, calculando com precisão a velocidade média de precessão experimental, erro padrão e $R^2$.
+*   **Comparação Teórica:** A aplicação sobrepõe aos dados reais uma reta representando a velocidade teórica esperada da precessão para a localidade de Araras-SP (~5,67°/h).
+*   **Painel de Informações:** Exibição da velocidade instantânea do pêndulo e estatísticas da regressão.
+*   **Exportação de Dados:** Os usuários podem baixar a parte visível do gráfico em formato `.csv` contendo as colunas `Angulo Mod180 (°)` e `Angulo Mod360 (°)`.
 
 ---
 

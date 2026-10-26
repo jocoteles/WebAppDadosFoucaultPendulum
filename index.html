@@ -31,8 +31,9 @@
                     <button id="btnLinearFit">Ajuste Linear nos Dados Visíveis</button>
                     <button id="btnExportData">Exportar Dados Visíveis (CSV)</button>
                     <button id="btnResetZoom">Resetar Zoom</button>
-                    <button id="btnToggleMod360">Habilitar Mod 360° (Escala)</button>
-                    <button id="btnToggleMod180">Habilitar Mod 180° (Escala)</button>
+                    <button id="btnMod180" class="active" title="Exibe os ângulos no intervalo fundamental de 0° a 180° (Padrão)">Mod 180° (Padrão)</button>
+                    <button id="btnMod360" class="inactive-mode" title="Exibe os ângulos no ciclo completo de 0° a 360°">Mod 360°</button>
+                    <button id="btnToggleContinuity" class="active" title="Aplica offset interno na janela visível para apresentar continuidade sem dente de serra">Continuidade: Ativa</button>
                 </div>
                 <canvas id="precessionChart"></canvas>
             </div>

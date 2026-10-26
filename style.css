@@ -75,10 +75,29 @@ button {
     border-radius: 4px;
     cursor: pointer;
     font-size: 0.9em;
+    transition: background-color 0.2s, opacity 0.2s;
 }
 
 button:hover {
     background-color: #0056b3;
+}
+
+button.active {
+    background-color: #28a745;
+}
+
+button.active:hover {
+    background-color: #218838;
+}
+
+button.inactive-mode {
+    background-color: #6c757d;
+    opacity: 0.85;
+}
+
+button.inactive-mode:hover {
+    background-color: #5a6268;
+    opacity: 1;
 }
 
 select {
