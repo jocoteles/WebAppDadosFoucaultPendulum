@@ -11,10 +11,10 @@ Além de apenas observar, a aplicação permite que qualquer pessoa interessada 
 *   **Gráfico Interativo com Zoom e Pan Independentes:** Visualização em tempo real do ângulo de precessão versus tempo. Suporta *zoom* horizontal e vertical (inclusive no Modo 180°) e *pan* (arrastar) suave sem alterações automáticas indesejadas de escala.
 *   **Dois Modos Gráficos Exclusivos:**
     *   **Modo 180° (Padrão):** Visualização inicial entre 0° e 180°, compatível com o registro fundamental do plano de oscilação do pêndulo no Firebase. Permite zoom vertical e horizontal livre.
-    *   **Modo Acumulativo:** Quando detecta uma transição superior a -90° para pontos na imediação de 180° (ex: queda de ~179° para ~2°), soma 180° acumulativamente por transição, com escala vertical submúltipla de 180° e linhas de referência tracejadas a cada 180°.
+    *   **Modo Acumulativo:** Considera **exclusivamente os dados visíveis na janela gráfica** (não aplica sobre toda a série histórica). Inicia no primeiro ponto visível e, quando detecta uma transição superior a -90° para pontos na imediação de 180° (ex: queda de ~179° para ~2°), soma 180° acumulativamente por transição, com escala vertical submúltipla de 180° e linhas de referência tracejadas a cada 180°.
 *   **Controles de Enquadramento:**
-    *   **Expandir verticalmente:** Ajusta os limites da escala vertical para que o menor e o maior valor dos dados ocupem, respectivamente, a base e o topo da janela gráfica.
-    *   **Expandir horizontalmente:** Ajusta o eixo de tempo para abranger toda a extensão histórica dos dados coletados, do início ao fim.
+    *   **Expandir verticalmente:** Ajusta os limites da escala vertical para que o menor e o maior valor dos pontos visíveis ocupem, respectivamente, a base e o topo da janela gráfica.
+    *   **Expandir horizontalmente:** Ajusta os limites do eixo horizontal (tempo) para que o menor e o maior tempo dos pontos visíveis ocupem, respectivamente, a esquerda e a direita da janela gráfica.
 *   **Ajuste Linear Estatístico nos Dados Visíveis:**
     *   Calculado exclusivamente ao clicar no botão "Ajuste Linear nos Dados Visíveis", considerando apenas a janela de dados visível no momento do clique (respeitando tanto os limites de tempo quanto de ângulo).
     *   **Persistência no Zoom/Pan:** Ao mudar o zoom ou arrastar o gráfico, o ajuste já realizado **não é recalculado automaticamente** nem perdido, permanecendo estável na tela com suas estatísticas preservadas.
