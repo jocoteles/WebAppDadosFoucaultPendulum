@@ -371,16 +371,31 @@ function initializeChart() {
 }
 
 /**
- * Obtém os dados de `precessionChart` que estão atualmente visíveis no gráfico
- * (considerando tanto os limites horizontais quanto verticais).
- * @returns {Array<{x: number, y: number}>} Array de pontos visíveis {x: timestamp, y: angulo}.
+ * Obtém os limites atuais (min/max) dos eixos X e Y da janela gráfica.
+ * @returns {{minX: number|undefined, maxX: number|undefined, minY: number|undefined, maxY: number|undefined}}
+ */
+function getCurrentScaleBounds() {
+    const xScale = precessionChart?.scales?.x;
+    const yScale = precessionChart?.scales?.y;
+    const xOpts = precessionChart?.options?.scales?.x;
+    const yOpts = precessionChart?.options?.scales?.y;
+
+    const minX = (xOpts?.min !== undefined) ? xOpts.min : xScale?.min;
+    const maxX = (xOpts?.max !== undefined) ? xOpts.max : xScale?.max;
+    const minY = (yOpts?.min !== undefined) ? yOpts.min : yScale?.min;
+    const maxY = (yOpts?.max !== undefined) ? yOpts.max : yScale?.max;
+
+    return { minX, maxX, minY, maxY };
+}
+
+/**
+ * Obtém os dados de `precessionChart` que estão atualmente visíveis na janela gráfica
+ * (considerando tanto os limites horizontais quanto verticais da janela atual).
+ * @returns {Array<{x: number, y: number, angle180: number}>} Array de pontos visíveis na janela.
  */
 function getVisibleChartData() {
     if (!precessionChart || !allDataPoints.length) return [];
-    const minX = precessionChart.scales.x ? precessionChart.scales.x.min : precessionChart.options.scales.x.min;
-    const maxX = precessionChart.scales.x ? precessionChart.scales.x.max : precessionChart.options.scales.x.max;
-    const minY = precessionChart.scales.y ? precessionChart.scales.y.min : precessionChart.options.scales.y.min;
-    const maxY = precessionChart.scales.y ? precessionChart.scales.y.max : precessionChart.options.scales.y.max;
+    const { minX, maxX, minY, maxY } = getCurrentScaleBounds();
 
     const datasetPoints = precessionChart.data.datasets[0].data;
     if (!datasetPoints || datasetPoints.length === 0) return [];
@@ -393,52 +408,56 @@ function getVisibleChartData() {
 }
 
 /**
- * Obtém os pontos brutos de `allDataPoints` que estão dentro da janela horizontal visível (tempo).
- * @returns {Array<{timestamp: number, angle180: number}>} Pontos visíveis no tempo.
- */
-function getVisibleTimePoints() {
-    if (!allDataPoints || allDataPoints.length === 0) return [];
-    const minX = precessionChart?.scales?.x ? precessionChart.scales.x.min : precessionChart?.options?.scales?.x?.min;
-    const maxX = precessionChart?.scales?.x ? precessionChart.scales.x.max : precessionChart?.options?.scales?.x?.max;
-
-    if (minX === undefined || maxX === undefined) {
-        return allDataPoints;
-    }
-    return allDataPoints.filter(p => p.timestamp >= minX && p.timestamp <= maxX);
-}
-
-/**
  * Converte SOMENTE os dados visíveis na janela gráfica para o modo acumulativo:
- * Inicia no primeiro ponto visível e, quando detecta uma transição com queda superior a 90° (diff < -90)
- * entre pontos na vizinhança de 180° (prev > 90 e curr < 90), soma 180° acumulativamente.
- * @returns {Array<{x: number, y: number}>} Pontos acumulados da janela visível.
+ * Inicia no primeiro ponto visível da janela e, quando detecta uma transição com queda
+ * superior a 90° (diff < -90) entre pontos na imediação de 180° (prev > 90 e curr < 90),
+ * soma 180° acumulativamente por transição.
+ * @param {Array<{x: number, y: number, angle180?: number}>} [sourceVisiblePoints] - Pontos visíveis na janela gráfica.
+ * @returns {Array<{x: number, y: number, angle180: number}>} Pontos acumulados apenas da janela visível.
  */
-function computeAccumulativeVisiblePoints() {
-    const visibleData = getVisibleTimePoints();
+function computeAccumulativeVisiblePoints(sourceVisiblePoints) {
+    const visibleData = (sourceVisiblePoints && sourceVisiblePoints.length > 0)
+        ? sourceVisiblePoints
+        : getVisibleChartData();
+
     if (!visibleData || visibleData.length === 0) return [];
+
+    // Garante ordenação cronológica dos pontos visíveis
+    const sortedVisible = [...visibleData].sort((a, b) => a.x - b.x);
 
     const result = [];
     let cumulativeOffset = 0;
 
+    const firstRaw = (sortedVisible[0].angle180 !== undefined)
+        ? sortedVisible[0].angle180
+        : ((sortedVisible[0].y % 180) + 180) % 180;
+
     result.push({
-        x: visibleData[0].timestamp,
-        y: visibleData[0].angle180
+        x: sortedVisible[0].x,
+        y: firstRaw,
+        angle180: firstRaw
     });
 
-    for (let i = 1; i < visibleData.length; i++) {
-        const prev = visibleData[i - 1].angle180;
-        const curr = visibleData[i].angle180;
-        const diff = curr - prev;
+    let prevRaw = firstRaw;
 
-        // Transição com queda superior a 90° entre pontos na vizinhança de 180° (ex: 178° -> 2°)
-        if (diff < -90 && prev > 90 && curr < 90) {
+    for (let i = 1; i < sortedVisible.length; i++) {
+        const currRaw = (sortedVisible[i].angle180 !== undefined)
+            ? sortedVisible[i].angle180
+            : ((sortedVisible[i].y % 180) + 180) % 180;
+        const diff = currRaw - prevRaw;
+
+        // Transição superior a -90° para pontos na imediação de 180° (ex: ~178° -> ~2°)
+        if (diff < -90 && prevRaw > 90 && currRaw < 90) {
             cumulativeOffset += 180;
         }
 
         result.push({
-            x: visibleData[i].timestamp,
-            y: curr + cumulativeOffset
+            x: sortedVisible[i].x,
+            y: currRaw + cumulativeOffset,
+            angle180: currRaw
         });
+
+        prevRaw = currRaw;
     }
 
     return result;
@@ -459,34 +478,14 @@ function syncFitLinesPosition() {
         return;
     }
 
-    if (currentGraphicMode === '180') {
-        precessionChart.data.datasets[1].data = [
-            { x: currentFitData.firstTimestamp, y: currentFitData.baseFitYStart },
-            { x: currentFitData.lastTimestamp, y: currentFitData.baseFitYEnd }
-        ];
-        precessionChart.data.datasets[2].data = [
-            { x: currentFitData.firstTimestamp, y: currentFitData.baseTheoYStart },
-            { x: currentFitData.lastTimestamp, y: currentFitData.baseTheoYEnd }
-        ];
-    } else {
-        const currentPlottedPoints = precessionChart.data.datasets[0].data;
-        const refPoint = currentPlottedPoints.find(p => p.x === currentFitData.referenceTimestamp);
-        let yShift = currentFitData.lastRenderedYShift;
-
-        if (refPoint) {
-            yShift = refPoint.y - currentFitData.referenceYAtFit;
-            currentFitData.lastRenderedYShift = yShift;
-        }
-
-        precessionChart.data.datasets[1].data = [
-            { x: currentFitData.firstTimestamp, y: currentFitData.baseFitYStart + yShift },
-            { x: currentFitData.lastTimestamp, y: currentFitData.baseFitYEnd + yShift }
-        ];
-        precessionChart.data.datasets[2].data = [
-            { x: currentFitData.firstTimestamp, y: currentFitData.baseTheoYStart + yShift },
-            { x: currentFitData.lastTimestamp, y: currentFitData.baseTheoYEnd + yShift }
-        ];
-    }
+    precessionChart.data.datasets[1].data = [
+        { x: currentFitData.firstTimestamp, y: currentFitData.baseFitYStart },
+        { x: currentFitData.lastTimestamp, y: currentFitData.baseFitYEnd }
+    ];
+    precessionChart.data.datasets[2].data = [
+        { x: currentFitData.firstTimestamp, y: currentFitData.baseTheoYStart },
+        { x: currentFitData.lastTimestamp, y: currentFitData.baseTheoYEnd }
+    ];
 
     precessionChart.data.datasets[1].hidden = false;
     precessionChart.data.datasets[2].hidden = false;
@@ -502,11 +501,11 @@ function updateChartDisplayData() {
     if (currentGraphicMode === '180') {
         precessionChart.data.datasets[0].data = allDataPoints.map(p => ({
             x: p.timestamp,
-            y: p.angle180
+            y: p.angle180,
+            angle180: p.angle180
         }));
         precessionChart.options.scales.y.title.text = 'Ângulo de Precessão (0° - 180°)';
     } else {
-        precessionChart.data.datasets[0].data = computeAccumulativeVisiblePoints();
         precessionChart.options.scales.y.title.text = 'Ângulo Acumulado de Precessão (°)';
     }
 
@@ -527,10 +526,10 @@ function handleZoomPan() {
     if (precessionChart.scales.y) {
         precessionChart.options.scales.y.min = precessionChart.scales.y.min;
         precessionChart.options.scales.y.max = precessionChart.scales.y.max;
-    }
-
-    if (currentGraphicMode === 'accumulative') {
-        precessionChart.data.datasets[0].data = computeAccumulativeVisiblePoints();
+        if (currentGraphicMode === 'accumulative') {
+            const span = precessionChart.scales.y.max - precessionChart.scales.y.min;
+            precessionChart.options.scales.y.ticks.stepSize = getBestSubmultipleStep(span);
+        }
     }
 
     syncFitLinesPosition();
@@ -538,8 +537,8 @@ function handleZoomPan() {
 }
 
 /**
- * Expande verticalmente: o menor e o maior valor vertical dos dados visíveis ocupam,
- * respectivamente, a base e o topo da janela gráfica.
+ * Expande verticalmente: o menor e o maior valor vertical dos dados visíveis na janela gráfica
+ * ocupam, respectivamente, a base e o topo da janela gráfica.
  */
 function expandVertically() {
     if (!precessionChart || !allDataPoints.length) return;
@@ -572,8 +571,8 @@ function expandVertically() {
 }
 
 /**
- * Expande horizontalmente: o menor e o maior valor horizontal (tempo) dos dados visíveis ocupam,
- * respectivamente, a base e o topo (esquerda e direita) da janela gráfica.
+ * Expande horizontalmente: o menor e o maior valor horizontal (tempo) dos dados visíveis
+ * na janela gráfica ocupam, respectivamente, a esquerda e a direita da janela gráfica.
  */
 function expandHorizontally() {
     if (!precessionChart || !allDataPoints.length) return;
@@ -596,10 +595,6 @@ function expandHorizontally() {
 
     precessionChart.options.scales.x.min = minX;
     precessionChart.options.scales.x.max = maxX;
-
-    if (currentGraphicMode === 'accumulative') {
-        precessionChart.data.datasets[0].data = computeAccumulativeVisiblePoints();
-    }
 
     syncFitLinesPosition();
     precessionChart.update();
@@ -789,7 +784,6 @@ btnExpandY.addEventListener('click', expandVertically);
 btnExpandX.addEventListener('click', expandHorizontally);
 
 btnMod180.addEventListener('click', () => {
-    if (currentGraphicMode === '180') return;
     currentGraphicMode = '180';
     btnMod180.classList.add('active');
     btnMod180.classList.remove('inactive-mode');
@@ -800,7 +794,8 @@ btnMod180.addEventListener('click', () => {
 
     precessionChart.data.datasets[0].data = allDataPoints.map(p => ({
         x: p.timestamp,
-        y: p.angle180
+        y: p.angle180,
+        angle180: p.angle180
     }));
     precessionChart.options.scales.y.title.text = 'Ângulo de Precessão (0° - 180°)';
     precessionChart.options.scales.y.min = 0;
@@ -812,7 +807,10 @@ btnMod180.addEventListener('click', () => {
 });
 
 btnModAccumulative.addEventListener('click', () => {
-    if (currentGraphicMode === 'accumulative') return;
+    // Captura SOMENTE os pontos atualmente visíveis na janela gráfica antes de alterar o estado
+    const currentlyVisible = getVisibleChartData();
+    if (!currentlyVisible || currentlyVisible.length === 0) return;
+
     currentGraphicMode = 'accumulative';
     btnModAccumulative.classList.add('active');
     btnModAccumulative.classList.remove('inactive-mode');
@@ -821,15 +819,13 @@ btnModAccumulative.addEventListener('click', () => {
 
     clearLinearFit();
 
-    const accumPoints = computeAccumulativeVisiblePoints();
+    const accumPoints = computeAccumulativeVisiblePoints(currentlyVisible);
     precessionChart.data.datasets[0].data = accumPoints;
     precessionChart.options.scales.y.title.text = 'Ângulo Acumulado de Precessão (°)';
 
     // Ajusta a escala vertical aos pontos acumulados visíveis na janela
-    const pointsToConsider = accumPoints;
-
     let minY = Infinity, maxY = -Infinity;
-    pointsToConsider.forEach(p => {
+    accumPoints.forEach(p => {
         if (p.y < minY) minY = p.y;
         if (p.y > maxY) maxY = p.y;
     });
@@ -837,8 +833,14 @@ btnModAccumulative.addEventListener('click', () => {
     if (minY !== Infinity && maxY !== -Infinity) {
         const span = Math.max(1, maxY - minY);
         const step = getBestSubmultipleStep(span);
-        precessionChart.options.scales.y.min = Math.floor(minY / step) * step;
-        precessionChart.options.scales.y.max = Math.ceil(maxY / step) * step;
+        let yMinBound = Math.floor(minY / step) * step;
+        let yMaxBound = Math.ceil(maxY / step) * step;
+        if (yMinBound === yMaxBound) {
+            yMinBound -= step;
+            yMaxBound += step;
+        }
+        precessionChart.options.scales.y.min = yMinBound;
+        precessionChart.options.scales.y.max = yMaxBound;
         precessionChart.options.scales.y.ticks.stepSize = step;
     }
 
